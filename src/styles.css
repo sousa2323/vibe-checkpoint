@@ -1,12 +1,13 @@
 @import "tailwindcss" source(none);
+@import "@neondatabase/auth-ui/tailwind";
+@import "leaflet/dist/leaflet.css";
 @source "../src";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans:
-    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
@@ -44,24 +45,24 @@
   --radius: 1rem;
 
   /* Brand */
-  --background: oklch(1 0 0);              /* #FFFFFF */
-  --foreground: oklch(0.05 0 0);           /* #050505 */
-  --ink: oklch(0.05 0 0);                  /* black nav */
-  --surface: oklch(0.951 0 0);             /* #EFEFEF */
+  --background: oklch(1 0 0); /* #FFFFFF */
+  --foreground: oklch(0.05 0 0); /* #050505 */
+  --ink: oklch(0.05 0 0); /* black nav */
+  --surface: oklch(0.951 0 0); /* #EFEFEF */
 
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.05 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.05 0 0);
 
-  --primary: oklch(0.645 0.215 17.5);      /* #F13A5A rose */
+  --primary: oklch(0.645 0.215 17.5); /* #F13A5A rose */
   --primary-foreground: oklch(1 0 0);
 
-  --secondary: oklch(0.05 0 0);            /* black secondary */
+  --secondary: oklch(0.05 0 0); /* black secondary */
   --secondary-foreground: oklch(1 0 0);
 
-  --muted: oklch(0.951 0 0);               /* #EFEFEF */
-  --muted-foreground: oklch(0.56 0 0);     /* #7E7E7E */
+  --muted: oklch(0.951 0 0); /* #EFEFEF */
+  --muted-foreground: oklch(0.56 0 0); /* #7E7E7E */
 
   --accent: oklch(0.951 0 0);
   --accent-foreground: oklch(0.05 0 0);
@@ -77,6 +78,8 @@
 .dark {
   --background: oklch(0.05 0 0);
   --foreground: oklch(1 0 0);
+  --ink: oklch(0.05 0 0);
+  --surface: oklch(0.16 0 0);
   --card: oklch(0.13 0 0);
   --card-foreground: oklch(1 0 0);
   --popover: oklch(0.13 0 0);
@@ -101,7 +104,8 @@
     border-color: var(--color-border);
   }
 
-  html, body {
+  html,
+  body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
@@ -121,5 +125,237 @@
 }
 
 /* Hide scrollbars on horizontal scrollers */
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+[data-sonner-toaster] {
+  --width: min(calc(100vw - 32px), 448px);
+  left: 50% !important;
+  right: auto !important;
+  width: var(--width) !important;
+  transform: translateX(-50%);
+}
+
+[data-sonner-toaster][data-y-position="bottom"] {
+  bottom: max(16px, env(safe-area-inset-bottom)) !important;
+}
+
+[data-sonner-toaster][data-y-position="top"] {
+  top: max(14px, env(safe-area-inset-top)) !important;
+}
+
+[data-sonner-toast] {
+  width: var(--width) !important;
+  min-height: 56px !important;
+  border: 1px solid rgb(5 5 5 / 8%) !important;
+  border-radius: 22px !important;
+  background: rgb(255 255 255 / 94%) !important;
+  box-shadow:
+    0 18px 44px rgb(5 5 5 / 14%),
+    0 4px 12px rgb(5 5 5 / 8%) !important;
+  color: #050505 !important;
+  padding: 14px 16px !important;
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+}
+
+[data-sonner-toast] [data-icon] {
+  width: 22px !important;
+  height: 22px !important;
+  margin-right: 10px !important;
+}
+
+[data-sonner-toast] [data-title] {
+  color: #050505 !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  line-height: 1.35 !important;
+}
+
+[data-sonner-toast] [data-description] {
+  color: rgb(5 5 5 / 62%) !important;
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+}
+
+[data-sonner-toast][data-type="error"] [data-icon] {
+  color: var(--color-primary) !important;
+}
+
+[data-sonner-toast][data-type="success"] [data-icon] {
+  color: #16a34a !important;
+}
+
+[data-sonner-toast][data-type="warning"] [data-icon] {
+  color: #d97706 !important;
+}
+
+.dark [data-sonner-toast] {
+  border-color: rgb(255 255 255 / 12%) !important;
+  background: rgb(24 24 27 / 88%) !important;
+  box-shadow:
+    0 18px 44px rgb(0 0 0 / 34%),
+    0 4px 12px rgb(0 0 0 / 18%) !important;
+  color: white !important;
+}
+
+.dark [data-sonner-toast] [data-title] {
+  color: white !important;
+}
+
+.dark [data-sonner-toast] [data-description] {
+  color: rgb(255 255 255 / 68%) !important;
+}
+
+.chegaai-map-marker {
+  width: auto !important;
+  height: auto !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.chegaai-map-pin {
+  position: relative;
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid white;
+  border-radius: 999px 999px 999px 0;
+  box-shadow: 0 12px 24px rgb(0 0 0 / 28%);
+  transform: rotate(-45deg);
+}
+
+.chegaai-map-pin::before {
+  position: absolute;
+  inset: -7px;
+  border-radius: inherit;
+  content: "";
+  opacity: 0;
+  transform: scale(0.82);
+}
+
+.chegaai-map-pin::after {
+  content: "";
+  position: relative;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: white;
+}
+
+.chegaai-map-pin-user {
+  border-radius: 999px;
+  background: #0ea5e9;
+  transform: none;
+}
+
+.chegaai-map-pin-user::before {
+  display: none;
+}
+
+.chegaai-map-pin-calm {
+  background: #10b981;
+}
+
+.chegaai-map-pin-calm::before {
+  background: rgb(16 185 129 / 32%);
+  animation: chegaai-map-pin-pulse 2.8s ease-out infinite;
+}
+
+.chegaai-map-pin-warm {
+  background: #fbbf24;
+  box-shadow: 0 14px 28px rgb(251 191 36 / 36%);
+}
+
+.chegaai-map-pin-warm::before {
+  background: rgb(251 191 36 / 42%);
+  animation: chegaai-map-pin-pulse 1.9s ease-out infinite;
+}
+
+.chegaai-map-pin-hot {
+  background: #f13a5a;
+  box-shadow: 0 16px 34px rgb(241 58 90 / 44%);
+  animation: chegaai-map-pin-pop 1.25s ease-in-out infinite;
+}
+
+.chegaai-map-pin-hot::before {
+  background: rgb(241 58 90 / 46%);
+  animation: chegaai-map-pin-pulse 1.25s ease-out infinite;
+}
+
+.chegaai-map-label {
+  position: absolute;
+  left: 50%;
+  top: 38px;
+  display: flex;
+  max-width: 142px;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 9px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 8px 18px rgb(0 0 0 / 18%);
+  color: #050505;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.1;
+  transform: translateX(-50%);
+  white-space: normal;
+}
+
+.chegaai-map-title {
+  max-width: 124px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chegaai-map-sublabel {
+  font-size: 10px;
+  font-weight: 950;
+}
+
+@keyframes chegaai-map-pin-pulse {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.78);
+  }
+
+  70% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
+@keyframes chegaai-map-pin-pop {
+  0%,
+  100% {
+    transform: rotate(-45deg) scale(1);
+  }
+
+  50% {
+    transform: rotate(-45deg) scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chegaai-map-pin,
+  .chegaai-map-pin::before {
+    animation: none;
+  }
+}

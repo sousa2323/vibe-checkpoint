@@ -11,12 +11,10 @@ interface PillButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> 
 }
 
 const variantClasses: Record<Variant, string> = {
-  primary:
-    "bg-primary text-primary-foreground hover:opacity-90 active:scale-[0.98]",
-  dark: "bg-foreground text-white hover:opacity-90 active:scale-[0.98]",
-  light: "bg-white text-foreground hover:bg-muted active:scale-[0.98]",
-  outline:
-    "border border-border bg-transparent text-foreground hover:bg-muted active:scale-[0.98]",
+  primary: "bg-primary text-primary-foreground hover:opacity-90 active:scale-[0.98]",
+  dark: "bg-ink text-white hover:opacity-90 active:scale-[0.98]",
+  light: "border border-border bg-card text-card-foreground hover:bg-muted active:scale-[0.98]",
+  outline: "border border-border bg-transparent text-foreground hover:bg-muted active:scale-[0.98]",
   ghost: "bg-transparent text-foreground hover:bg-muted",
 };
 

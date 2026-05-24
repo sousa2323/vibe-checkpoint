@@ -9,17 +9,51 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VenueOnboardingRouteImport } from './routes/venue-onboarding'
+import { Route as VenueDashboardRouteImport } from './routes/venue-dashboard'
+import { Route as UpdatesRouteImport } from './routes/updates'
+import { Route as ReviewsRouteImport } from './routes/reviews'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as PostAuthRouteImport } from './routes/post-auth'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as DiscoverRouteImport } from './routes/discover'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as VenuesVenueIdRouteImport } from './routes/venues.$venueId'
+import { Route as GroupsNewRouteImport } from './routes/groups.new'
+import { Route as GroupsGroupIdRouteImport } from './routes/groups.$groupId'
+import { Route as EventsEventIdRouteImport } from './routes/events.$eventId'
 
+const VenueOnboardingRoute = VenueOnboardingRouteImport.update({
+  id: '/venue-onboarding',
+  path: '/venue-onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VenueDashboardRoute = VenueDashboardRouteImport.update({
+  id: '/venue-dashboard',
+  path: '/venue-dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UpdatesRoute = UpdatesRouteImport.update({
+  id: '/updates',
+  path: '/updates',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewsRoute = ReviewsRouteImport.update({
+  id: '/reviews',
+  path: '/reviews',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PostAuthRoute = PostAuthRouteImport.update({
+  id: '/post-auth',
+  path: '/post-auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OnboardingRoute = OnboardingRouteImport.update({
@@ -52,6 +86,26 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VenuesVenueIdRoute = VenuesVenueIdRouteImport.update({
+  id: '/venues/$venueId',
+  path: '/venues/$venueId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GroupsNewRoute = GroupsNewRouteImport.update({
+  id: '/groups/new',
+  path: '/groups/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GroupsGroupIdRoute = GroupsGroupIdRouteImport.update({
+  id: '/groups/$groupId',
+  path: '/groups/$groupId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EventsEventIdRoute = EventsEventIdRouteImport.update({
+  id: '/events/$eventId',
+  path: '/events/$eventId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -60,7 +114,16 @@ export interface FileRoutesByFullPath {
   '/discover': typeof DiscoverRoute
   '/map': typeof MapRoute
   '/onboarding': typeof OnboardingRoute
+  '/post-auth': typeof PostAuthRoute
   '/profile': typeof ProfileRoute
+  '/reviews': typeof ReviewsRoute
+  '/updates': typeof UpdatesRoute
+  '/venue-dashboard': typeof VenueDashboardRoute
+  '/venue-onboarding': typeof VenueOnboardingRoute
+  '/events/$eventId': typeof EventsEventIdRoute
+  '/groups/$groupId': typeof GroupsGroupIdRoute
+  '/groups/new': typeof GroupsNewRoute
+  '/venues/$venueId': typeof VenuesVenueIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -69,7 +132,16 @@ export interface FileRoutesByTo {
   '/discover': typeof DiscoverRoute
   '/map': typeof MapRoute
   '/onboarding': typeof OnboardingRoute
+  '/post-auth': typeof PostAuthRoute
   '/profile': typeof ProfileRoute
+  '/reviews': typeof ReviewsRoute
+  '/updates': typeof UpdatesRoute
+  '/venue-dashboard': typeof VenueDashboardRoute
+  '/venue-onboarding': typeof VenueOnboardingRoute
+  '/events/$eventId': typeof EventsEventIdRoute
+  '/groups/$groupId': typeof GroupsGroupIdRoute
+  '/groups/new': typeof GroupsNewRoute
+  '/venues/$venueId': typeof VenuesVenueIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -79,7 +151,16 @@ export interface FileRoutesById {
   '/discover': typeof DiscoverRoute
   '/map': typeof MapRoute
   '/onboarding': typeof OnboardingRoute
+  '/post-auth': typeof PostAuthRoute
   '/profile': typeof ProfileRoute
+  '/reviews': typeof ReviewsRoute
+  '/updates': typeof UpdatesRoute
+  '/venue-dashboard': typeof VenueDashboardRoute
+  '/venue-onboarding': typeof VenueOnboardingRoute
+  '/events/$eventId': typeof EventsEventIdRoute
+  '/groups/$groupId': typeof GroupsGroupIdRoute
+  '/groups/new': typeof GroupsNewRoute
+  '/venues/$venueId': typeof VenuesVenueIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -90,7 +171,16 @@ export interface FileRouteTypes {
     | '/discover'
     | '/map'
     | '/onboarding'
+    | '/post-auth'
     | '/profile'
+    | '/reviews'
+    | '/updates'
+    | '/venue-dashboard'
+    | '/venue-onboarding'
+    | '/events/$eventId'
+    | '/groups/$groupId'
+    | '/groups/new'
+    | '/venues/$venueId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -99,7 +189,16 @@ export interface FileRouteTypes {
     | '/discover'
     | '/map'
     | '/onboarding'
+    | '/post-auth'
     | '/profile'
+    | '/reviews'
+    | '/updates'
+    | '/venue-dashboard'
+    | '/venue-onboarding'
+    | '/events/$eventId'
+    | '/groups/$groupId'
+    | '/groups/new'
+    | '/venues/$venueId'
   id:
     | '__root__'
     | '/'
@@ -108,7 +207,16 @@ export interface FileRouteTypes {
     | '/discover'
     | '/map'
     | '/onboarding'
+    | '/post-auth'
     | '/profile'
+    | '/reviews'
+    | '/updates'
+    | '/venue-dashboard'
+    | '/venue-onboarding'
+    | '/events/$eventId'
+    | '/groups/$groupId'
+    | '/groups/new'
+    | '/venues/$venueId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -118,16 +226,60 @@ export interface RootRouteChildren {
   DiscoverRoute: typeof DiscoverRoute
   MapRoute: typeof MapRoute
   OnboardingRoute: typeof OnboardingRoute
+  PostAuthRoute: typeof PostAuthRoute
   ProfileRoute: typeof ProfileRoute
+  ReviewsRoute: typeof ReviewsRoute
+  UpdatesRoute: typeof UpdatesRoute
+  VenueDashboardRoute: typeof VenueDashboardRoute
+  VenueOnboardingRoute: typeof VenueOnboardingRoute
+  EventsEventIdRoute: typeof EventsEventIdRoute
+  GroupsGroupIdRoute: typeof GroupsGroupIdRoute
+  GroupsNewRoute: typeof GroupsNewRoute
+  VenuesVenueIdRoute: typeof VenuesVenueIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/venue-onboarding': {
+      id: '/venue-onboarding'
+      path: '/venue-onboarding'
+      fullPath: '/venue-onboarding'
+      preLoaderRoute: typeof VenueOnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/venue-dashboard': {
+      id: '/venue-dashboard'
+      path: '/venue-dashboard'
+      fullPath: '/venue-dashboard'
+      preLoaderRoute: typeof VenueDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/updates': {
+      id: '/updates'
+      path: '/updates'
+      fullPath: '/updates'
+      preLoaderRoute: typeof UpdatesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reviews': {
+      id: '/reviews'
+      path: '/reviews'
+      fullPath: '/reviews'
+      preLoaderRoute: typeof ReviewsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/profile': {
       id: '/profile'
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/post-auth': {
+      id: '/post-auth'
+      path: '/post-auth'
+      fullPath: '/post-auth'
+      preLoaderRoute: typeof PostAuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/onboarding': {
@@ -172,6 +324,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/venues/$venueId': {
+      id: '/venues/$venueId'
+      path: '/venues/$venueId'
+      fullPath: '/venues/$venueId'
+      preLoaderRoute: typeof VenuesVenueIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/groups/new': {
+      id: '/groups/new'
+      path: '/groups/new'
+      fullPath: '/groups/new'
+      preLoaderRoute: typeof GroupsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/groups/$groupId': {
+      id: '/groups/$groupId'
+      path: '/groups/$groupId'
+      fullPath: '/groups/$groupId'
+      preLoaderRoute: typeof GroupsGroupIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/events/$eventId': {
+      id: '/events/$eventId'
+      path: '/events/$eventId'
+      fullPath: '/events/$eventId'
+      preLoaderRoute: typeof EventsEventIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -182,8 +362,27 @@ const rootRouteChildren: RootRouteChildren = {
   DiscoverRoute: DiscoverRoute,
   MapRoute: MapRoute,
   OnboardingRoute: OnboardingRoute,
+  PostAuthRoute: PostAuthRoute,
   ProfileRoute: ProfileRoute,
+  ReviewsRoute: ReviewsRoute,
+  UpdatesRoute: UpdatesRoute,
+  VenueDashboardRoute: VenueDashboardRoute,
+  VenueOnboardingRoute: VenueOnboardingRoute,
+  EventsEventIdRoute: EventsEventIdRoute,
+  GroupsGroupIdRoute: GroupsGroupIdRoute,
+  GroupsNewRoute: GroupsNewRoute,
+  VenuesVenueIdRoute: VenuesVenueIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

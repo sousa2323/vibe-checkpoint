@@ -1,5 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { ChevronRight, MapPin, Music2, UsersRound } from "lucide-react";
+import { useEffect, useState } from "react";
+import { authClient } from "@/auth";
 import { PillButton } from "@/components/pill-button";
 import { cn } from "@/lib/utils";
 
@@ -9,88 +11,123 @@ export const Route = createFileRoute("/onboarding")({
 
 const slides = [
   {
-    title: "Entre no Mundo dos Eventos ao Vivo",
-    desc: "Descubra eventos incríveis perto de você e participe da ação — tudo a um toque.",
+    title: "Encontre o rolê certo agora",
+    desc: "Eventos, bares e pubs acontecendo perto de você, sem ficar procurando em vários lugares.",
     image:
       "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1200&auto=format&fit=crop&q=70",
+    eyebrow: "Descoberta ao vivo",
+    icon: MapPin,
   },
   {
-    title: "Bares e Pubs em Tempo Real",
-    desc: "Veja onde está rolando música ao vivo agora e o movimento de cada lugar.",
+    title: "Sinta o clima antes de sair",
+    desc: "Veja música ao vivo, movimento e destaques para decidir rápido onde vale chegar.",
     image:
       "https://images.unsplash.com/photo-1572116469696-31de0f17cc34?w=1200&auto=format&fit=crop&q=70",
+    eyebrow: "Clima em tempo real",
+    icon: Music2,
   },
   {
-    title: "Divida Despesas com os Amigos",
-    desc: "Nosso app facilita rachar a conta. Divida tudo sem dor de cabeça.",
+    title: "Salve, combine e chegue junto",
+    desc: "Guarde seus lugares favoritos, acompanhe eventos e compartilhe os planos com os amigos.",
     image:
       "https://images.unsplash.com/photo-1543007630-9710e4a00a20?w=1200&auto=format&fit=crop&q=70",
+    eyebrow: "Sua noite organizada",
+    icon: UsersRound,
   },
 ];
 
 function Onboarding() {
-  const [i, setI] = useState(0);
   const navigate = useNavigate();
+  const { data, isPending } = authClient.useSession();
+  const user = data?.user;
+  const [i, setI] = useState(0);
   const slide = slides[i];
   const last = i === slides.length - 1;
+  const Icon = slide.icon;
+
+  useEffect(() => {
+    if (isPending || !user?.id) return;
+
+    try {
+      localStorage.setItem("chegaai:onboarded", "1");
+    } catch {
+      // Browsers can block storage in stricter privacy modes.
+    }
+
+    navigate({ to: "/profile", replace: true });
+  }, [isPending, navigate, user?.id]);
+
+  function goToAuth() {
+    try {
+      localStorage.setItem("chegaai:onboarded", "1");
+    } catch {
+      // Browsers can block storage in stricter privacy modes.
+    }
+    navigate({ to: "/auth" });
+  }
 
   function next() {
     if (last) {
-      localStorage.setItem("chegaai:onboarded", "1");
-      navigate({ to: "/auth" });
-    } else setI(i + 1);
+      goToAuth();
+    } else setI((current) => current + 1);
   }
 
   return (
-    <main className="app-shell flex flex-col bg-background">
-      <div className="relative flex-1">
+    <main className="app-shell flex flex-col overflow-hidden bg-ink text-white">
+      <div className="relative min-h-[58dvh] flex-1">
         <img
           src={slide.image}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
+          alt={slide.title}
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
         />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/5 to-black/70" />
+        <button
+          type="button"
+          onClick={goToAuth}
+          className="absolute right-5 top-[calc(env(safe-area-inset-top)+1.25rem)] rounded-full bg-white/90 px-4 py-2 text-sm font-bold text-foreground shadow-sm backdrop-blur"
+        >
+          Pular
+        </button>
+        <div className="absolute bottom-7 left-6 right-6">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-2 text-xs font-bold backdrop-blur-md">
+            <Icon className="h-4 w-4" />
+            {slide.eyebrow}
+          </div>
+        </div>
       </div>
 
-      <div className="-mt-10 rounded-t-[2.5rem] bg-background px-8 pb-8 pt-10">
-        <h2 className="text-center text-[26px] font-bold leading-tight tracking-tight">
-          {slide.title}
-        </h2>
-        <p className="mx-auto mt-3 max-w-xs text-center text-sm leading-relaxed text-muted-foreground">
+      <div className="relative z-10 -mt-6 rounded-t-[2rem] bg-background px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-8 text-foreground shadow-[0_-20px_50px_rgba(0,0,0,0.18)]">
+        <h2 className="text-[30px] font-black leading-[1.04] tracking-tight">{slide.title}</h2>
+        <p className="mt-4 max-w-sm text-[15px] leading-relaxed text-muted-foreground">
           {slide.desc}
         </p>
 
-        <div className="mt-6 flex items-center justify-center gap-1.5">
+        <div className="mt-7 flex items-center gap-2">
           {slides.map((_, n) => (
             <span
               key={n}
               className={cn(
-                "h-1.5 rounded-full transition-all",
-                n === i ? "w-6 bg-foreground" : "w-1.5 bg-muted",
+                "h-2 rounded-full transition-all duration-300",
+                n === i ? "w-8 bg-primary" : "w-2 bg-muted",
               )}
             />
           ))}
         </div>
 
         <PillButton
-          variant="dark"
+          variant="primary"
           size="lg"
           onClick={next}
-          className="mt-6 w-full"
+          className="mt-8 w-full shadow-[0_18px_30px_rgba(241,58,90,0.25)]"
         >
-          {last ? "Vamos começar" : "Continuar"}
+          {last ? "Criar ou entrar na conta" : "Continuar"}
+          <ChevronRight className="h-5 w-5" />
         </PillButton>
 
-        {!last && (
-          <button
-            onClick={() => {
-              localStorage.setItem("chegaai:onboarded", "1");
-              navigate({ to: "/auth" });
-            }}
-            className="mx-auto mt-3 block text-sm font-medium text-muted-foreground"
-          >
-            Pular
-          </button>
-        )}
+        <p className="mx-auto mt-4 max-w-xs text-center text-xs leading-relaxed text-muted-foreground">
+          O onboarding aparece só no primeiro acesso. Depois disso, você volta direto para sua
+          conta.
+        </p>
       </div>
     </main>
   );
