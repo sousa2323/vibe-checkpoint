@@ -3,6 +3,8 @@ import { getRequestHeaders } from "@tanstack/start-server-core";
 const fallbackAuthUrl =
   "https://ep-sparkling-sea-acu02pkf.neonauth.sa-east-1.aws.neon.tech/neondb/auth";
 const isProduction = process.env.NODE_ENV === "production";
+const neonAuthCookiePrefix = "__Secure-neon-auth";
+const localAuthCookiePrefix = "neon-auth";
 
 type AuthSessionPayload = {
   user?: {
@@ -33,10 +35,16 @@ function getAuthUrl() {
 }
 
 function getSessionCookie(cookieHeader: string) {
-  return cookieHeader
+  const sessionCookie = cookieHeader
     .split(";")
     .map((cookie) => cookie.trim())
     .find((cookie) => cookie.split("=")[0]?.includes("session_token"));
+
+  if (sessionCookie?.startsWith(`${localAuthCookiePrefix}.`)) {
+    return `${neonAuthCookiePrefix}.${sessionCookie.slice(`${localAuthCookiePrefix}.`.length)}`;
+  }
+
+  return sessionCookie;
 }
 
 async function getAuthenticatedUserId(): Promise<AuthLookupResult> {

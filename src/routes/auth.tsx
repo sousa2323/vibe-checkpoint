@@ -1,9 +1,12 @@
 import { AuthView } from "@neondatabase/auth-ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { MapPin, Store } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type KeyboardEvent, useEffect, useState } from "react";
 import { authClient } from "@/auth";
-import { ptBRAuthLocalization } from "@/lib/auth-localization";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { formatAuthToastMessage, ptBRAuthLocalization } from "@/lib/auth-localization";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/auth")({
@@ -15,7 +18,8 @@ type AccountType = "explorer" | "owner";
 
 function Auth() {
   const navigate = useNavigate();
-  const { data, isPending } = authClient.useSession();
+  const session = authClient.useSession();
+  const { data, isPending } = session;
   const [tab, setTab] = useState<Tab>("login");
   const [accountType, setAccountType] = useState<AccountType>("explorer");
 
@@ -41,6 +45,11 @@ function Auth() {
   const selectAccountType = (type: AccountType) => {
     setAccountType(type);
     localStorage.setItem("chegaai:signup-account-type", type);
+  };
+
+  const finishLogin = async () => {
+    await session.refetch();
+    navigate({ to: "/post-auth", replace: true });
   };
 
   return (
@@ -141,13 +150,186 @@ function Auth() {
           </div>
         ) : null}
 
-        <AuthView
-          pathname={tab === "login" ? "sign-in" : "sign-up"}
-          redirectTo="/post-auth"
-          localization={ptBRAuthLocalization}
-          socialLayout="horizontal"
-        />
+        {tab === "login" ? (
+          <LoginForm onCreateAccount={() => setTab("signup")} onSignedIn={finishLogin} />
+        ) : (
+          <AuthView
+            pathname="sign-up"
+            redirectTo="/post-auth"
+            localization={ptBRAuthLocalization}
+            socialLayout="horizontal"
+          />
+        )}
       </div>
     </main>
+  );
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return formatAuthToastMessage(error.message);
+  if (typeof error === "string") return formatAuthToastMessage(error);
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") return formatAuthToastMessage(message);
+  }
+
+  return "Não foi possível entrar. Confira email e senha e tente novamente.";
+}
+
+function LoginForm({
+  onCreateAccount,
+  onSignedIn,
+}: {
+  onCreateAccount: () => void;
+  onSignedIn: () => Promise<void>;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const emailParam = url.searchParams.get("email");
+    if (emailParam) setEmail(emailParam);
+
+    if (url.searchParams.has("email") || url.searchParams.has("password")) {
+      url.searchParams.delete("email");
+      url.searchParams.delete("password");
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+    }
+  }, []);
+
+  const submit = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setStatus("Informe email e senha para entrar.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatus("Entrando...");
+
+    try {
+      const signInResult = (await authClient.signIn.email({
+        email: trimmedEmail,
+        password,
+        fetchOptions: { throw: true, credentials: "include" },
+      })) as { error?: unknown } | undefined;
+
+      if (signInResult?.error) throw signInResult.error;
+
+      const sessionResponse = await fetch("/api/auth/get-session?disableCookieCache=true", {
+        credentials: "include",
+      });
+      const sessionPayload = (await sessionResponse.json().catch(() => null)) as {
+        user?: { id?: string };
+        data?: { user?: { id?: string } };
+      } | null;
+      const userId = sessionPayload?.user?.id ?? sessionPayload?.data?.user?.id;
+
+      if (!sessionResponse.ok || !userId) {
+        throw new Error(
+          "Login aceito, mas a sessão não foi salva no navegador. Tente limpar os cookies deste site e entrar novamente.",
+        );
+      }
+
+      await onSignedIn();
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+      setPassword("");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const submitOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (!isSubmitting) void submit();
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-background p-6 shadow-sm">
+      <div className="mb-6">
+        <h2 className="text-xl font-bold">Entrar</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Entre com seu email para acessar sua conta.
+        </p>
+      </div>
+
+      <div className="grid gap-5">
+        <div className="grid gap-2">
+          <Label htmlFor="login-email">Email</Label>
+          <Input
+            id="login-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            placeholder="voce@email.com"
+            value={email}
+            disabled={isSubmitting}
+            onChange={(event) => setEmail(event.target.value)}
+            onKeyDown={submitOnEnter}
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="login-password">Senha</Label>
+            <button
+              type="button"
+              className="text-sm hover:underline"
+              disabled={isSubmitting}
+              onClick={() =>
+                setStatus("Use a recuperação de senha do provedor Neon Auth se necessário.")
+              }
+            >
+              Esqueceu sua senha?
+            </button>
+          </div>
+          <Input
+            id="login-password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            placeholder="Senha"
+            value={password}
+            disabled={isSubmitting}
+            onChange={(event) => setPassword(event.target.value)}
+            onKeyDown={submitOnEnter}
+          />
+        </div>
+
+        {status ? (
+          <p className="rounded-xl bg-muted px-3 py-2 text-sm text-muted-foreground">{status}</p>
+        ) : null}
+
+        <Button
+          type="button"
+          className="h-10 rounded-xl bg-primary"
+          disabled={isSubmitting}
+          onClick={() => void submit()}
+        >
+          {isSubmitting ? "Entrando..." : "Entrar"}
+        </Button>
+      </div>
+
+      <p className="mt-6 text-center text-sm text-muted-foreground">
+        Ainda não tem uma conta?{" "}
+        <button
+          type="button"
+          className="font-medium text-foreground underline"
+          disabled={isSubmitting}
+          onClick={onCreateAccount}
+        >
+          Criar conta
+        </button>
+      </p>
+    </div>
   );
 }
