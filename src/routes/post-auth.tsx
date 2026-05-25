@@ -19,21 +19,21 @@ function getStoredAccountType(): AccountType {
 
 function PostAuth() {
   const navigate = useNavigate();
-  const { data } = authClient.useSession();
+  const { data, isPending } = authClient.useSession();
   const user = data?.user;
   const getProfile = useServerFn(getUserProfile);
   const saveProfile = useServerFn(saveUserProfile);
   const [message, setMessage] = useState("Preparando sua experiência...");
 
   useEffect(() => {
-    if (user) return;
+    if (isPending || user) return;
 
     const timeout = window.setTimeout(() => {
       navigate({ to: "/auth", replace: true });
     }, 1400);
 
     return () => window.clearTimeout(timeout);
-  }, [navigate, user]);
+  }, [isPending, navigate, user]);
 
   useEffect(() => {
     if (!user?.id) return;

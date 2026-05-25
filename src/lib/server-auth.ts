@@ -2,6 +2,7 @@ import { getRequestHeaders } from "@tanstack/start-server-core";
 
 const fallbackAuthUrl =
   "https://ep-sparkling-sea-acu02pkf.neonauth.sa-east-1.aws.neon.tech/neondb/auth";
+const isProduction = process.env.NODE_ENV === "production";
 
 type AuthSessionPayload = {
   user?: {
@@ -20,12 +21,15 @@ type AuthLookupResult = {
 };
 
 function getAuthUrl() {
-  return (
+  const authUrl =
     process.env.NEON_AUTH_URL ??
     process.env.VITE_NEON_AUTH_URL ??
-    import.meta.env.VITE_NEON_AUTH_URL ??
-    fallbackAuthUrl
-  );
+    import.meta.env.VITE_NEON_AUTH_URL;
+
+  if (authUrl) return authUrl;
+  if (!isProduction) return fallbackAuthUrl;
+
+  throw new Error("NEON_AUTH_URL não configurada.");
 }
 
 function getSessionCookie(cookieHeader: string) {
@@ -42,17 +46,21 @@ async function getAuthenticatedUserId(): Promise<AuthLookupResult> {
   const sessionCookie = getSessionCookie(cookieHeader);
   if (!sessionCookie) return { userId: null, hadSessionCookie: false };
 
-  const response = await fetch(`${getAuthUrl().replace(/\/+$/, "")}/get-session`, {
-    headers: { Cookie: sessionCookie },
-    signal: AbortSignal.timeout(3000),
-  });
-  if (!response.ok) return { userId: null, hadSessionCookie: true };
+  try {
+    const response = await fetch(`${getAuthUrl().replace(/\/+$/, "")}/get-session`, {
+      headers: { Cookie: sessionCookie },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!response.ok) return { userId: null, hadSessionCookie: true };
 
-  const payload = (await response.json()) as AuthSessionPayload | null;
-  return {
-    userId: payload?.user?.id ?? payload?.data?.user?.id ?? null,
-    hadSessionCookie: true,
-  };
+    const payload = (await response.json()) as AuthSessionPayload | null;
+    return {
+      userId: payload?.user?.id ?? payload?.data?.user?.id ?? null,
+      hadSessionCookie: true,
+    };
+  } catch {
+    return { userId: null, hadSessionCookie: true };
+  }
 }
 
 export async function requireAuthenticatedUserId(expectedUserId?: string) {
@@ -60,7 +68,6 @@ export async function requireAuthenticatedUserId(expectedUserId?: string) {
 
   const session = await getAuthenticatedUserId();
   if (!session.userId) {
-    if (!session.hadSessionCookie) return expectedUserId;
     throw new Error("Usuário não autenticado.");
   }
   const sessionUserId = session.userId;
