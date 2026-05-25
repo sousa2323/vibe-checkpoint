@@ -1,5 +1,3 @@
-import type { AuthLocalization } from "@neondatabase/auth-ui/server";
-
 export const ptBRAuthLocalization = {
   APP: "ChegaAí",
   ACCOUNT: "Conta",
@@ -44,7 +42,7 @@ export const ptBRAuthLocalization = {
   INVALID_EMAIL: "Informe um email válido.",
   PASSWORD_TOO_SHORT: "A senha precisa ter mais caracteres.",
   PASSWORD_TOO_LONG: "A senha está muito longa.",
-} satisfies AuthLocalization;
+} satisfies Record<string, string>;
 
 const authToastMessages: Record<string, string> = {
   "User already exists": "Este email já está cadastrado. Tente entrar ou use outro email.",

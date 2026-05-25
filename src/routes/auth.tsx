@@ -1,4 +1,3 @@
-import { AuthView } from "@neondatabase/auth-ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { MapPin, Store } from "lucide-react";
 import { type KeyboardEvent, useEffect, useState } from "react";
@@ -6,7 +5,7 @@ import { authClient } from "@/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatAuthToastMessage, ptBRAuthLocalization } from "@/lib/auth-localization";
+import { formatAuthToastMessage } from "@/lib/auth-localization";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/auth")({
@@ -153,12 +152,7 @@ function Auth() {
         {tab === "login" ? (
           <LoginForm onCreateAccount={() => setTab("signup")} onSignedIn={finishLogin} />
         ) : (
-          <AuthView
-            pathname="sign-up"
-            redirectTo="/post-auth"
-            localization={ptBRAuthLocalization}
-            socialLayout="horizontal"
-          />
+          <SignupForm accountType={accountType} onSignedUp={finishLogin} />
         )}
       </div>
     </main>
@@ -215,28 +209,10 @@ function LoginForm({
     setStatus("Entrando...");
 
     try {
-      const signInResult = (await authClient.signIn.email({
+      await authClient.signIn.email({
         email: trimmedEmail,
         password,
-        fetchOptions: { throw: true, credentials: "include" },
-      })) as { error?: unknown } | undefined;
-
-      if (signInResult?.error) throw signInResult.error;
-
-      const sessionResponse = await fetch("/api/auth/get-session?disableCookieCache=true", {
-        credentials: "include",
       });
-      const sessionPayload = (await sessionResponse.json().catch(() => null)) as {
-        user?: { id?: string };
-        data?: { user?: { id?: string } };
-      } | null;
-      const userId = sessionPayload?.user?.id ?? sessionPayload?.data?.user?.id;
-
-      if (!sessionResponse.ok || !userId) {
-        throw new Error(
-          "Login aceito, mas a sessão não foi salva no navegador. Tente limpar os cookies deste site e entrar novamente.",
-        );
-      }
 
       await onSignedIn();
     } catch (error) {
@@ -285,9 +261,7 @@ function LoginForm({
               type="button"
               className="text-sm hover:underline"
               disabled={isSubmitting}
-              onClick={() =>
-                setStatus("Use a recuperação de senha do provedor Neon Auth se necessário.")
-              }
+              onClick={() => setStatus("A recuperação de senha será ativada na próxima etapa.")}
             >
               Esqueceu sua senha?
             </button>
@@ -330,6 +304,135 @@ function LoginForm({
           Criar conta
         </button>
       </p>
+    </div>
+  );
+}
+
+function SignupForm({
+  accountType,
+  onSignedUp,
+}: {
+  accountType: AccountType;
+  onSignedUp: () => Promise<void>;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const submit = async () => {
+    const trimmedEmail = email.trim();
+    const trimmedName = name.trim();
+    if (!trimmedEmail || !password) {
+      setStatus("Informe email e senha para criar sua conta.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatus("Criando conta...");
+
+    try {
+      const result = await authClient.signUp.email({
+        email: trimmedEmail,
+        password,
+        options: {
+          data: {
+            name: trimmedName || undefined,
+            account_type: accountType,
+          },
+          emailRedirectTo: `${window.location.origin}/post-auth`,
+        },
+      });
+
+      if (result.needsEmailConfirmation) {
+        setStatus("Conta criada. Confira seu email para confirmar o acesso.");
+        setPassword("");
+        return;
+      }
+
+      await onSignedUp();
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+      setPassword("");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const submitOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (!isSubmitting) void submit();
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-background p-6 shadow-sm">
+      <div className="mb-6">
+        <h2 className="text-xl font-bold">Criar conta</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Use email e senha para entrar no ChegaAí.
+        </p>
+      </div>
+
+      <div className="grid gap-5">
+        <div className="grid gap-2">
+          <Label htmlFor="signup-name">Nome</Label>
+          <Input
+            id="signup-name"
+            name="name"
+            autoComplete="name"
+            placeholder="Seu nome"
+            value={name}
+            disabled={isSubmitting}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={submitOnEnter}
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="signup-email">Email</Label>
+          <Input
+            id="signup-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            placeholder="voce@email.com"
+            value={email}
+            disabled={isSubmitting}
+            onChange={(event) => setEmail(event.target.value)}
+            onKeyDown={submitOnEnter}
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="signup-password">Senha</Label>
+          <Input
+            id="signup-password"
+            name="password"
+            type="password"
+            autoComplete="new-password"
+            placeholder="Senha"
+            value={password}
+            disabled={isSubmitting}
+            onChange={(event) => setPassword(event.target.value)}
+            onKeyDown={submitOnEnter}
+          />
+        </div>
+
+        {status ? (
+          <p className="rounded-xl bg-muted px-3 py-2 text-sm text-muted-foreground">{status}</p>
+        ) : null}
+
+        <Button
+          type="button"
+          className="h-10 rounded-xl bg-primary"
+          disabled={isSubmitting}
+          onClick={() => void submit()}
+        >
+          {isSubmitting ? "Criando..." : "Criar conta"}
+        </Button>
+      </div>
     </div>
   );
 }

@@ -158,6 +158,11 @@ function EventDetailPage() {
     const userId = await requireUser();
     if (!userId) return;
 
+    if (!isEventReviewAvailable(event.startsAt)) {
+      setStatus("A avaliação será liberada depois que o evento terminar.");
+      return;
+    }
+
     if (!isReviewDraftComplete(reviewDraft)) {
       setStatus("Escolha notas de 1 a 5 em todos os critérios.");
       return;
@@ -199,6 +204,7 @@ function EventDetailPage() {
   }
 
   const checkedIn = Boolean(event.checkedIn);
+  const reviewAvailable = isEventReviewAvailable(event.startsAt);
   const reward = getCheckinReward(event);
   const rewardDescription = getRewardDescription(event);
   const rewardMeta = getRewardMeta(event);
@@ -288,6 +294,7 @@ function EventDetailPage() {
           draft={reviewDraft}
           editing={editingReview}
           review={review}
+          reviewAvailable={reviewAvailable}
           saving={reviewSaving}
           onChange={setReviewDraft}
           onEdit={() => setEditingReview(true)}
@@ -316,6 +323,15 @@ const DEFAULT_REVIEW_DRAFT: ReviewDraft = {
   comment: "",
 };
 
+const REVIEW_UNLOCK_DELAY_HOURS = 6;
+
+function isEventReviewAvailable(startsAt: string) {
+  const startsAtTime = new Date(startsAt).getTime();
+  if (!Number.isFinite(startsAtTime)) return false;
+
+  return Date.now() >= startsAtTime + REVIEW_UNLOCK_DELAY_HOURS * 60 * 60 * 1000;
+}
+
 function reviewToDraft(review: EventReviewSummary | null): ReviewDraft {
   if (!review) return DEFAULT_REVIEW_DRAFT;
 
@@ -333,6 +349,7 @@ function ReviewPanel({
   draft,
   editing,
   review,
+  reviewAvailable,
   saving,
   onChange,
   onEdit,
@@ -342,12 +359,13 @@ function ReviewPanel({
   draft: ReviewDraft;
   editing: boolean;
   review: EventReviewSummary | null;
+  reviewAvailable: boolean;
   saving: boolean;
   onChange: (draft: ReviewDraft) => void;
   onEdit: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const readyToSubmit = checkedIn && isReviewDraftComplete(draft) && !saving;
+  const readyToSubmit = checkedIn && reviewAvailable && isReviewDraftComplete(draft) && !saving;
 
   if (review && !editing) {
     return (
@@ -375,6 +393,18 @@ function ReviewPanel({
         <button type="button" onClick={onEdit} className="mt-4 text-sm font-black text-primary">
           Editar avaliação
         </button>
+      </section>
+    );
+  }
+
+  if (!reviewAvailable) {
+    return (
+      <section className="mt-6 rounded-[1.75rem] border border-border bg-card p-4">
+        <p className="text-xs font-bold uppercase tracking-wide text-primary">Review rápido</p>
+        <h2 className="mt-1 text-lg font-black tracking-tight">Avaliação ainda não liberada</h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          Você poderá avaliar esse rolê depois que o evento terminar.
+        </p>
       </section>
     );
   }

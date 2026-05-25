@@ -457,24 +457,12 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
     };
   });
 
-async function ensureVenueProfileSchema(sql: Awaited<ReturnType<typeof getSql>>) {
-  if (!sql) return;
-  await sql`ALTER TABLE public.venues ADD COLUMN IF NOT EXISTS city text`;
-  await sql`ALTER TABLE public.venues ADD COLUMN IF NOT EXISTS state text`;
-  await sql`ALTER TABLE public.venues ADD COLUMN IF NOT EXISTS business_role text`;
-  await sql`ALTER TABLE public.venues ADD COLUMN IF NOT EXISTS description text`;
-  await sql`ALTER TABLE public.venues ADD COLUMN IF NOT EXISTS phone text`;
-  await sql`ALTER TABLE public.venues ADD COLUMN IF NOT EXISTS category text`;
-  await sql`ALTER TABLE public.venues ADD COLUMN IF NOT EXISTS instagram text`;
-  await sql`ALTER TABLE public.venues ADD COLUMN IF NOT EXISTS whatsapp text`;
-  await sql`ALTER TABLE public.venues ADD COLUMN IF NOT EXISTS capacity integer`;
-  await sql`ALTER TABLE public.venues ADD COLUMN IF NOT EXISTS latitude double precision`;
-  await sql`ALTER TABLE public.venues ADD COLUMN IF NOT EXISTS longitude double precision`;
+async function ensureVenueProfileSchema(_sql: Awaited<ReturnType<typeof getSql>>) {
+  return;
 }
 
-async function ensureUserProfileSchema(sql: Awaited<ReturnType<typeof getSql>>) {
-  if (!sql) return;
-  await sql`ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS avatar_url text`;
+async function ensureUserProfileSchema(_sql: Awaited<ReturnType<typeof getSql>>) {
+  return;
 }
 
 async function geocodeVenueAddress(data: SaveVenueClaimInput) {

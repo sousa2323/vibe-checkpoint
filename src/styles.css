@@ -1,5 +1,4 @@
 @import "tailwindcss" source(none);
-@import "@neondatabase/auth-ui/tailwind";
 @import "leaflet/dist/leaflet.css";
 @source "../src";
 @import "tw-animate-css";

@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getSql } from "./db";
 import { requireAuthenticatedUserId } from "./server-auth";
+import { ensureMediaBucket, getMediaBucketName, getSupabaseServerClient } from "./supabase-server";
 
 const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp"] as const;
 const maxImageBytes = 2 * 1024 * 1024;
@@ -33,25 +33,18 @@ export const uploadMedia = createServerFn({ method: "POST" })
       throw new Error("A imagem deve ter até 2MB.");
     }
 
-    const sql = await getSql();
-    if (!sql) throw new Error("DATABASE_URL não configurada.");
+    const bucket = await ensureMediaBucket();
+    const supabase = getSupabaseServerClient();
+    const extension = data.mimeType.split("/")[1] ?? "jpg";
+    const path = `${userId}/${crypto.randomUUID()}.${extension}`;
+    const bytes = Buffer.from(cleanBase64, "base64");
 
-    const rows = await sql`
-      INSERT INTO public.media_assets (
-        owner_user_id,
-        mime_type,
-        size_bytes,
-        bytes
-      )
-      VALUES (
-        ${userId},
-        ${data.mimeType},
-        ${sizeBytes},
-        decode(${cleanBase64}, 'base64')
-      )
-      RETURNING id
-    `;
-    const id = String(rows[0].id);
+    const { error } = await supabase.storage.from(bucket).upload(path, bytes, {
+      contentType: data.mimeType,
+      upsert: false,
+    });
+    if (error) throw error;
 
-    return { mediaUrl: `/api/media/${id}` };
+    const { data: publicUrl } = supabase.storage.from(getMediaBucketName()).getPublicUrl(path);
+    return { mediaUrl: publicUrl.publicUrl };
   });

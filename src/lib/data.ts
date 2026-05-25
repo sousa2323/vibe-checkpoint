@@ -560,152 +560,24 @@ function mapVenueUpdate(row: Record<string, unknown>): VenueUpdateSummary {
   };
 }
 
-async function ensureVenueUpdatesSchema(sql: SqlClient) {
-  await ensureVenueFollowersSchema(sql);
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.venue_updates (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      venue_id uuid NOT NULL REFERENCES public.venues(id) ON DELETE CASCADE,
-      title text NOT NULL,
-      body text NOT NULL DEFAULT '',
-      kind text NOT NULL DEFAULT 'news',
-      created_at timestamptz NOT NULL DEFAULT now(),
-      CONSTRAINT venue_updates_kind_check CHECK (kind IN ('news', 'promo', 'event'))
-    )
-  `;
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS venue_updates_venue_created_idx
-    ON public.venue_updates (venue_id, created_at DESC)
-  `;
+async function ensureVenueUpdatesSchema(_sql: SqlClient) {
+  return;
 }
 
-async function ensureNotificationReadsSchema(sql: SqlClient) {
-  await ensureVenueUpdatesSchema(sql);
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.user_notification_reads (
-      user_id text PRIMARY KEY,
-      last_seen_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL DEFAULT now()
-    )
-  `;
+async function ensureNotificationReadsSchema(_sql: SqlClient) {
+  return;
 }
 
-async function ensureGroupPlansSchema(sql: SqlClient) {
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.group_plans (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      creator_user_id text,
-      title text NOT NULL,
-      description text NOT NULL DEFAULT '',
-      status text NOT NULL DEFAULT 'open',
-      created_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL DEFAULT now(),
-      CONSTRAINT group_plans_status_check CHECK (status IN ('open', 'closed'))
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.group_plan_options (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      group_id uuid NOT NULL REFERENCES public.group_plans(id) ON DELETE CASCADE,
-      event_id uuid REFERENCES public.events(id) ON DELETE SET NULL,
-      title text NOT NULL,
-      subtitle text NOT NULL DEFAULT '',
-      image_url text NOT NULL,
-      position integer NOT NULL DEFAULT 0,
-      created_at timestamptz NOT NULL DEFAULT now()
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.group_plan_votes (
-      group_id uuid NOT NULL REFERENCES public.group_plans(id) ON DELETE CASCADE,
-      option_id uuid NOT NULL REFERENCES public.group_plan_options(id) ON DELETE CASCADE,
-      voter_key text NOT NULL,
-      voter_name text NOT NULL DEFAULT 'Alguém no grupo',
-      created_at timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (group_id, voter_key)
-    )
-  `;
-
-  await sql`CREATE INDEX IF NOT EXISTS group_plan_options_group_position_idx ON public.group_plan_options (group_id, position)`;
-  await sql`CREATE INDEX IF NOT EXISTS group_plan_votes_option_idx ON public.group_plan_votes (option_id)`;
+async function ensureGroupPlansSchema(_sql: SqlClient) {
+  return;
 }
 
-async function ensurePostsSchema(sql: SqlClient) {
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.user_posts (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id text NOT NULL,
-      venue_id uuid NOT NULL REFERENCES public.venues(id) ON DELETE CASCADE,
-      event_id uuid REFERENCES public.events(id) ON DELETE SET NULL,
-      caption text NOT NULL DEFAULT '',
-      tagged_person text,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL DEFAULT now()
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.user_post_media (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      post_id uuid NOT NULL REFERENCES public.user_posts(id) ON DELETE CASCADE,
-      media_url text NOT NULL,
-      position integer NOT NULL DEFAULT 0,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      CONSTRAINT user_post_media_position_check CHECK (position >= 0 AND position < 3)
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.user_post_likes (
-      post_id uuid NOT NULL REFERENCES public.user_posts(id) ON DELETE CASCADE,
-      user_id text NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (post_id, user_id)
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.user_post_comments (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      post_id uuid NOT NULL REFERENCES public.user_posts(id) ON DELETE CASCADE,
-      user_id text NOT NULL,
-      body text NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now()
-    )
-  `;
-
-  await sql`CREATE INDEX IF NOT EXISTS user_posts_venue_created_idx ON public.user_posts (venue_id, created_at DESC)`;
-  await sql`CREATE INDEX IF NOT EXISTS user_post_media_post_position_idx ON public.user_post_media (post_id, position)`;
+async function ensurePostsSchema(_sql: SqlClient) {
+  return;
 }
 
-async function ensureEventReviewsSchema(sql: SqlClient) {
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.event_reviews (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      event_id uuid NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
-      user_id text NOT NULL,
-      atmosphere integer NOT NULL,
-      music integer NOT NULL,
-      price integer NOT NULL,
-      movement integer NOT NULL,
-      comment text NOT NULL DEFAULT '',
-      created_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL DEFAULT now(),
-      UNIQUE (event_id, user_id),
-      CONSTRAINT event_reviews_atmosphere_check CHECK (atmosphere BETWEEN 1 AND 5),
-      CONSTRAINT event_reviews_music_check CHECK (music BETWEEN 1 AND 5),
-      CONSTRAINT event_reviews_price_check CHECK (price BETWEEN 1 AND 5),
-      CONSTRAINT event_reviews_movement_check CHECK (movement BETWEEN 1 AND 5)
-    )
-  `;
-
-  await sql`CREATE INDEX IF NOT EXISTS event_reviews_user_created_idx ON public.event_reviews (user_id, created_at DESC)`;
-  await sql`CREATE INDEX IF NOT EXISTS event_reviews_event_created_idx ON public.event_reviews (event_id, created_at DESC)`;
+async function ensureEventReviewsSchema(_sql: SqlClient) {
+  return;
 }
 
 function mapVenue(row: Record<string, unknown>): VenueSummary {
@@ -730,45 +602,12 @@ function mapVenue(row: Record<string, unknown>): VenueSummary {
   };
 }
 
-async function ensureRewardsSchema(sql: SqlClient) {
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.venue_rewards (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      venue_id uuid NOT NULL REFERENCES public.venues(id) ON DELETE CASCADE,
-      action text NOT NULL DEFAULT 'checkin',
-      title text NOT NULL,
-      description text NOT NULL DEFAULT '',
-      status text NOT NULL DEFAULT 'active',
-      max_redemptions integer,
-      valid_until timestamptz,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL DEFAULT now(),
-      CONSTRAINT venue_rewards_action_check CHECK (action IN ('checkin', 'save', 'share', 'follow')),
-      CONSTRAINT venue_rewards_status_check CHECK (status IN ('active', 'inactive')),
-      CONSTRAINT venue_rewards_max_redemptions_check CHECK (max_redemptions IS NULL OR max_redemptions > 0)
-    )
-  `;
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS venue_rewards_venue_status_idx
-    ON public.venue_rewards (venue_id, status, updated_at DESC)
-  `;
+async function ensureRewardsSchema(_sql: SqlClient) {
+  return;
 }
 
-async function ensureVenueFollowersSchema(sql: SqlClient) {
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.venue_followers (
-      user_id text NOT NULL,
-      venue_id uuid NOT NULL REFERENCES public.venues(id) ON DELETE CASCADE,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (user_id, venue_id)
-    )
-  `;
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS venue_followers_venue_created_idx
-    ON public.venue_followers (venue_id, created_at DESC)
-  `;
+async function ensureVenueFollowersSchema(_sql: SqlClient) {
+  return;
 }
 
 async function getEventById(sql: SqlClient, eventId: string) {
@@ -1180,7 +1019,7 @@ export const upsertEventReview = createServerFn({ method: "POST" })
     await ensureEventReviewsSchema(sql);
 
     const checkins = await sql`
-      SELECT 1
+      SELECT e.starts_at <= now() - interval '6 hours' AS review_available
       FROM public.checkins c
       JOIN public.events e ON e.id = c.event_id
       WHERE c.user_id = ${userId}
@@ -1189,6 +1028,9 @@ export const upsertEventReview = createServerFn({ method: "POST" })
       LIMIT 1
     `;
     if (checkins.length === 0) throw new Error("Faça check-in no evento antes de avaliar.");
+    if (!checkins[0]?.review_available) {
+      throw new Error("A avaliação será liberada depois que o evento terminar.");
+    }
 
     const rows = await sql`
       INSERT INTO public.event_reviews (event_id, user_id, atmosphere, music, price, movement, comment)
@@ -1537,20 +1379,6 @@ async function ensurePostAuthorProfile(
   const displayName = authorName?.trim();
   const avatarUrl = authorAvatarUrl?.trim();
   if (!displayName && !avatarUrl) return;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.user_profiles (
-      user_id text PRIMARY KEY,
-      account_type text NOT NULL DEFAULT 'explorer',
-      display_name text,
-      avatar_url text,
-      onboarding_completed boolean NOT NULL DEFAULT false,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL DEFAULT now(),
-      CONSTRAINT user_profiles_account_type_check CHECK (account_type IN ('explorer', 'owner'))
-    )
-  `;
-  await sql`ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS avatar_url text`;
 
   await sql`
     INSERT INTO public.user_profiles (user_id, account_type, display_name, avatar_url, onboarding_completed)

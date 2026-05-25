@@ -1,71 +1,35 @@
 import { getRequestHeaders } from "@tanstack/start-server-core";
-
-const fallbackAuthUrl =
-  "https://ep-sparkling-sea-acu02pkf.neonauth.sa-east-1.aws.neon.tech/neondb/auth";
-const isProduction = process.env.NODE_ENV === "production";
-const neonAuthCookiePrefix = "__Secure-neon-auth";
-const localAuthCookiePrefix = "neon-auth";
-
-type AuthSessionPayload = {
-  user?: {
-    id?: string;
-  };
-  data?: {
-    user?: {
-      id?: string;
-    };
-  };
-};
+import { supabaseAccessTokenCookie } from "./auth-cookie";
+import { getSupabaseServerClient } from "./supabase-server";
 
 type AuthLookupResult = {
   userId: string | null;
   hadSessionCookie: boolean;
 };
 
-function getAuthUrl() {
-  const authUrl =
-    process.env.NEON_AUTH_URL ??
-    process.env.VITE_NEON_AUTH_URL ??
-    import.meta.env.VITE_NEON_AUTH_URL;
-
-  if (authUrl) return authUrl;
-  if (!isProduction) return fallbackAuthUrl;
-
-  throw new Error("NEON_AUTH_URL não configurada.");
-}
-
-function getSessionCookie(cookieHeader: string) {
-  const sessionCookie = cookieHeader
+function getCookieValue(cookieHeader: string, name: string) {
+  const cookie = cookieHeader
     .split(";")
-    .map((cookie) => cookie.trim())
-    .find((cookie) => cookie.split("=")[0]?.includes("session_token"));
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`));
 
-  if (sessionCookie?.startsWith(`${localAuthCookiePrefix}.`)) {
-    return `${neonAuthCookiePrefix}.${sessionCookie.slice(`${localAuthCookiePrefix}.`.length)}`;
-  }
-
-  return sessionCookie;
+  if (!cookie) return null;
+  return decodeURIComponent(cookie.slice(name.length + 1));
 }
 
 async function getAuthenticatedUserId(): Promise<AuthLookupResult> {
   const cookieHeader = getRequestHeaders().get("cookie");
   if (!cookieHeader) return { userId: null, hadSessionCookie: false };
 
-  const sessionCookie = getSessionCookie(cookieHeader);
-  if (!sessionCookie) return { userId: null, hadSessionCookie: false };
+  const accessToken = getCookieValue(cookieHeader, supabaseAccessTokenCookie);
+  if (!accessToken) return { userId: null, hadSessionCookie: false };
 
   try {
-    const response = await fetch(`${getAuthUrl().replace(/\/+$/, "")}/get-session`, {
-      headers: { Cookie: sessionCookie },
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!response.ok) return { userId: null, hadSessionCookie: true };
+    const supabase = getSupabaseServerClient();
+    const { data, error } = await supabase.auth.getUser(accessToken);
+    if (error || !data.user?.id) return { userId: null, hadSessionCookie: true };
 
-    const payload = (await response.json()) as AuthSessionPayload | null;
-    return {
-      userId: payload?.user?.id ?? payload?.data?.user?.id ?? null,
-      hadSessionCookie: true,
-    };
+    return { userId: data.user.id, hadSessionCookie: true };
   } catch {
     return { userId: null, hadSessionCookie: true };
   }
@@ -79,8 +43,9 @@ export async function requireAuthenticatedUserId(expectedUserId?: string) {
     throw new Error("Usuário não autenticado.");
   }
   const sessionUserId = session.userId;
-  if (sessionUserId !== expectedUserId)
+  if (sessionUserId !== expectedUserId) {
     throw new Error("Sessão não corresponde ao usuário informado.");
+  }
 
   return sessionUserId;
 }

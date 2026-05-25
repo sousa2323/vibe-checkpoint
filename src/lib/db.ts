@@ -3,12 +3,47 @@ export function getDatabaseUrl() {
   return process.env.DATABASE_URL;
 }
 
+type QueryValue =
+  | string
+  | number
+  | boolean
+  | Date
+  | null
+  | undefined
+  | Uint8Array
+  | string[]
+  | number[];
+
+type TaggedSql = (
+  strings: TemplateStringsArray,
+  ...values: QueryValue[]
+) => Promise<Record<string, unknown>[]>;
+
+let cachedSql: TaggedSql | null = null;
+
 export async function getSql() {
   const databaseUrl = getDatabaseUrl();
   if (!databaseUrl) return null;
+  if (cachedSql) return cachedSql;
 
-  const { neon } = await import("@neondatabase/serverless");
-  return neon(databaseUrl);
+  const { Pool } = await import("pg");
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    max: 5,
+    ssl: databaseUrl.includes("sslmode=disable") ? undefined : { rejectUnauthorized: false },
+  });
+
+  cachedSql = async (strings, ...values) => {
+    const text = strings.reduce((query, part, index) => {
+      const placeholder = index < values.length ? `$${index + 1}` : "";
+      return `${query}${part}${placeholder}`;
+    }, "");
+
+    const result = await pool.query(text, values);
+    return result.rows;
+  };
+
+  return cachedSql;
 }
 
 export type SqlClient = NonNullable<Awaited<ReturnType<typeof getSql>>>;

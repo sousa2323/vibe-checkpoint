@@ -41,3 +41,4 @@ docs
 .opencode
 migrations
 DEPLOY.md
+supabase

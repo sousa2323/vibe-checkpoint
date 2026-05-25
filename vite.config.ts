@@ -35,6 +35,13 @@ export default defineConfig(({ command }) => ({
   envPrefix: "VITE_",
   optimizeDeps: {
     include: ["react", "react-dom", "react/jsx-runtime", "@tanstack/react-router"],
+    exclude: [
+      "@tanstack/react-start",
+      "@tanstack/react-start/server",
+      "@tanstack/react-start/server-entry",
+      "@tanstack/react-start-server",
+      "@tanstack/start-server-core",
+    ],
   },
   build: {
     target: "es2022",

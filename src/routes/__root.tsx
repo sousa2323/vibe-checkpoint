@@ -7,45 +7,9 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { NeonAuthUIProvider } from "@neondatabase/auth-ui";
-import { toast as sonnerToast } from "sonner";
 
-import { authClient } from "../auth";
-import { formatAuthToastMessage, ptBRAuthLocalization } from "../lib/auth-localization";
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import appCss from "../styles.css?url";
-
-type NativeToast = {
-  message?: unknown;
-  variant?: "default" | "success" | "error" | "warning" | "info";
-};
-
-function showNativeToast({ message, variant = "default" }: NativeToast) {
-  const formattedMessage = formatAuthToastMessage(message);
-
-  if (variant === "default") {
-    sonnerToast(formattedMessage);
-    return;
-  }
-
-  sonnerToast[variant](formattedMessage);
-}
-
-function AuthLink({
-  href,
-  ...props
-}: {
-  href: string;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return <Link to={href} {...props} />;
-}
-
-function toRouterPath(to: string) {
-  const url = new URL(to, window.location.origin);
-  return `${url.pathname}${url.search}${url.hash}`;
-}
 
 const browserProcessEnvScript = `globalThis.process=globalThis.process||{};globalThis.process.env=Object.assign({NODE_ENV:${JSON.stringify(
   import.meta.env.PROD ? "production" : "development",
@@ -173,21 +137,10 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  const router = useRouter();
 
   return (
     <QueryClientProvider client={queryClient}>
-      <NeonAuthUIProvider
-        authClient={authClient}
-        localization={ptBRAuthLocalization}
-        navigate={(to) => router.navigate({ to: toRouterPath(to) })}
-        replace={(to) => router.navigate({ to: toRouterPath(to), replace: true })}
-        Link={AuthLink}
-        onSessionChange={() => router.invalidate()}
-        toast={showNativeToast}
-      >
-        <Outlet />
-      </NeonAuthUIProvider>
+      <Outlet />
     </QueryClientProvider>
   );
 }
