@@ -1,6 +1,5 @@
-import { createStart, createMiddleware } from "@tanstack/react-start";
+import { createCsrfMiddleware, createStart } from "@tanstack/react-start";
 
-import { renderErrorPage } from "./lib/error-page";
 import { getSupabaseBrowserClient } from "./lib/supabase-client";
 
 type ViteImportMeta = ImportMeta & {
@@ -8,6 +7,20 @@ type ViteImportMeta = ImportMeta & {
 };
 
 const serverFnBase = "/_serverFn/";
+const capacitorOrigins = new Set(["https://localhost", "capacitor://localhost"]);
+
+const csrfMiddleware = createCsrfMiddleware({
+  filter: (ctx) => ctx.handlerType === "serverFn",
+  origin: (origin, ctx) =>
+    origin === new URL(ctx.request.url).origin || capacitorOrigins.has(origin),
+  secFetchSite: (site, ctx) => {
+    if (site === "same-origin" || site === "same-site") return true;
+    if (site !== "cross-site") return false;
+
+    const origin = ctx.request.headers.get("origin");
+    return origin ? capacitorOrigins.has(origin) : false;
+  },
+});
 
 function getCapacitorServerFnOrigin() {
   return (import.meta as ViteImportMeta).env?.VITE_CAPACITOR_SERVER_FN_ORIGIN?.replace(/\/$/, "");
@@ -53,23 +66,8 @@ async function capacitorServerFnFetch(input: RequestInfo | URL, init?: RequestIn
   });
 }
 
-const errorMiddleware = createMiddleware().server(async ({ next }) => {
-  try {
-    return await next();
-  } catch (error) {
-    if (error != null && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-    console.error(error);
-    return new Response(renderErrorPage(), {
-      status: 500,
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
-  }
-});
-
 export const startInstance = createStart(() => ({
-  requestMiddleware: [errorMiddleware],
+  requestMiddleware: [csrfMiddleware],
   serverFns: {
     fetch: capacitorServerFnFetch,
   },
