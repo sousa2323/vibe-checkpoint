@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { authClient } from "@/auth";
+import { authClient, getAuthUserName } from "@/auth";
 import { FeedActionNav } from "@/components/feed-action-nav";
 import { PillButton } from "@/components/pill-button";
 import { UserAvatar } from "@/components/user-avatar";
@@ -91,7 +91,9 @@ function Profile() {
           if (cancelled) return;
           setDashboard(nextDashboard);
         } else {
-          const nextStats = await loadActivityStats({ data: { userId: user.id } });
+          const nextStats = normalizeActivityStats(
+            await loadActivityStats({ data: { userId: user.id } }),
+          );
           if (cancelled) return;
           setActivityStats(nextStats);
           setDashboard(null);
@@ -116,9 +118,10 @@ function Profile() {
 
   const isOwner = accountType === "owner";
   const venue = dashboard?.venue;
+  const authUserName = getAuthUserName(user);
   const displayName = isOwner
     ? (venue?.name ?? profile?.venueName ?? "Estabelecimento")
-    : (profile?.displayName ?? user?.name ?? "Convidado");
+    : (profile?.displayName ?? authUserName ?? "Convidado");
   const displayImage = isOwner ? venue?.image : (profile?.avatarUrl ?? getUserImage(user));
 
   function openProfileEditor() {
@@ -409,6 +412,20 @@ function getUserImage(user: unknown) {
   if (!user || typeof user !== "object") return undefined;
   const image = (user as { image?: unknown }).image;
   return typeof image === "string" ? image : undefined;
+}
+
+function normalizeActivityStats(
+  stats: Partial<UserActivityStats> | null | undefined,
+): UserActivityStats {
+  return {
+    checkins: toStatNumber(stats?.checkins),
+    reviews: toStatNumber(stats?.reviews),
+    saved: toStatNumber(stats?.saved),
+  };
+}
+
+function toStatNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function validateImageFile(file: File) {

@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { authClient } from "@/auth";
+import { authClient, getAuthUserName } from "@/auth";
 import { BottomNav } from "@/components/bottom-nav";
 import { NativeFeedback } from "@/components/native-feedback";
 import { PostComposer } from "@/components/post-composer";
@@ -23,7 +23,7 @@ export function FeedActionNav({
       <PostComposer
         open={composerOpen}
         userId={user?.id}
-        userName={user?.name}
+        userName={getAuthUserName(user)}
         userAvatarUrl={getUserImage(user)}
         onOpenChange={setComposerOpen}
         onCreated={(post) => onPostCreated?.(post)}

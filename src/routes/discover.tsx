@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { LocateFixed, MapPin, Search, UsersRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { authClient } from "@/auth";
+import { authClient, getAuthUserName } from "@/auth";
 import { BottomNav } from "@/components/bottom-nav";
 import { CommentsSheet } from "@/components/comments-sheet";
 import { EventCard } from "@/components/event-card";
@@ -491,7 +491,7 @@ function Discover() {
       <PostComposer
         open={composerOpen}
         userId={user?.id}
-        userName={user?.name}
+        userName={getAuthUserName(user)}
         userAvatarUrl={getUserImage(user)}
         onOpenChange={setComposerOpen}
         onCreated={(post) => setPosts((current) => [post, ...current])}

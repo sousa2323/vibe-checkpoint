@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, Copy, Share2, Trophy, UsersRound } from "lucide-react";
 import { useEffect, useState } from "react";
-import { authClient } from "@/auth";
+import { authClient, getAuthUserName } from "@/auth";
 import { BottomNav } from "@/components/bottom-nav";
 import { NativeFeedback } from "@/components/native-feedback";
 import { PillButton } from "@/components/pill-button";
@@ -49,7 +49,7 @@ function GroupPlanPage() {
           groupId,
           optionId,
           voterKey: key,
-          voterName: user?.name ?? undefined,
+          voterName: getAuthUserName(user),
         },
       });
       setPlan(nextPlan);

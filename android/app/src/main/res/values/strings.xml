@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ChegaAi</string>
+    <string name="title_activity_main">ChegaAi</string>
+    <string name="package_name">dev.arthsousa.chegaai</string>
+    <string name="custom_url_scheme">dev.arthsousa.chegaai</string>
+</resources>

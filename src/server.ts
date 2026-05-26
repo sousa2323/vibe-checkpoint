@@ -25,6 +25,43 @@ function brandedErrorResponse(): Response {
   });
 }
 
+function getAllowedCorsOrigin(request: Request) {
+  const origin = request.headers.get("origin");
+  if (origin === "https://localhost" || origin === "capacitor://localhost") {
+    return origin;
+  }
+  return null;
+}
+
+function withCors(request: Request, response: Response): Response {
+  const origin = getAllowedCorsOrigin(request);
+  if (!origin) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set("access-control-allow-origin", origin);
+  headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
+  headers.set(
+    "access-control-allow-headers",
+    "authorization, content-type, x-tsr-serverfn, x-tss-raw-response, x-tss-serialized",
+  );
+  headers.set("access-control-expose-headers", "x-tss-raw-response, x-tss-serialized");
+  headers.append("vary", "Origin");
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function corsPreflightResponse(request: Request): Response | null {
+  if (request.method !== "OPTIONS" || !getAllowedCorsOrigin(request)) {
+    return null;
+  }
+
+  return withCors(request, new Response(null, { status: 204 }));
+}
+
 function isCatastrophicSsrErrorBody(body: string, responseStatus: number): boolean {
   let payload: unknown;
   try {
@@ -69,12 +106,15 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const preflightResponse = corsPreflightResponse(request);
+      if (preflightResponse) return preflightResponse;
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      return withCors(request, await normalizeCatastrophicSsrResponse(response));
     } catch (error) {
       console.error(error);
-      return brandedErrorResponse();
+      return withCors(request, brandedErrorResponse());
     }
   },
 };

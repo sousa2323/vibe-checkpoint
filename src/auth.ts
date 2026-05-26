@@ -7,6 +7,12 @@ type AuthSessionData = {
   user: Pick<User, "id" | "email" | "user_metadata">;
 };
 
+export function getAuthUserName(user: AuthSessionData["user"] | null | undefined) {
+  const metadata = user?.user_metadata;
+  const name = metadata?.name ?? metadata?.full_name;
+  return typeof name === "string" && name.trim() ? name.trim() : undefined;
+}
+
 function toAuthSessionData(session: Session | null): AuthSessionData | null {
   if (!session?.user) return null;
   return { user: session.user };

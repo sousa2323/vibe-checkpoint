@@ -7,6 +7,14 @@ type AuthLookupResult = {
   hadSessionCookie: boolean;
 };
 
+function getBearerToken(authorizationHeader: string | null) {
+  if (!authorizationHeader) return null;
+
+  const [scheme, token] = authorizationHeader.split(/\s+/, 2);
+  if (scheme?.toLowerCase() !== "bearer" || !token) return null;
+  return token;
+}
+
 function getCookieValue(cookieHeader: string, name: string) {
   const cookie = cookieHeader
     .split(";")
@@ -18,10 +26,14 @@ function getCookieValue(cookieHeader: string, name: string) {
 }
 
 async function getAuthenticatedUserId(): Promise<AuthLookupResult> {
-  const cookieHeader = getRequestHeaders().get("cookie");
-  if (!cookieHeader) return { userId: null, hadSessionCookie: false };
+  const headers = getRequestHeaders();
+  const cookieHeader = headers.get("cookie");
+  const cookieAccessToken = cookieHeader
+    ? getCookieValue(cookieHeader, supabaseAccessTokenCookie)
+    : null;
+  const bearerAccessToken = getBearerToken(headers.get("authorization"));
+  const accessToken = cookieAccessToken ?? bearerAccessToken;
 
-  const accessToken = getCookieValue(cookieHeader, supabaseAccessTokenCookie);
   if (!accessToken) return { userId: null, hadSessionCookie: false };
 
   try {

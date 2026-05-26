@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { authClient } from "@/auth";
+import { authClient, getAuthUserName } from "@/auth";
 import { type AccountType, getUserProfile, saveUserProfile } from "@/lib/profile-actions";
 
 export const Route = createFileRoute("/post-auth")({
@@ -43,6 +43,7 @@ function PostAuth() {
 
     async function routeByProfile() {
       setMessage("Encontrando seu perfil no ChegaAí...");
+      const authUserName = getAuthUserName(currentUser);
       try {
         localStorage.setItem("chegaai:onboarded", "1");
       } catch {
@@ -65,7 +66,7 @@ function PostAuth() {
             data: {
               userId: currentUser.id,
               accountType: "owner",
-              displayName: currentUser.name ?? undefined,
+              displayName: authUserName,
               onboardingCompleted: false,
             },
           });
@@ -87,7 +88,7 @@ function PostAuth() {
         data: {
           userId: currentUser.id,
           accountType: "explorer",
-          displayName: currentUser.name ?? undefined,
+          displayName: authUserName,
           onboardingCompleted: true,
         },
       });

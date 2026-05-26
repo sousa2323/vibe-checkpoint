@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent, HTMLAttributes, ReactNode } from "react";
-import { authClient } from "@/auth";
+import { authClient, getAuthUserName } from "@/auth";
 import { PillButton } from "@/components/pill-button";
 import { RealMap } from "@/components/real-map";
 import {
@@ -313,7 +313,7 @@ function VenueOnboarding() {
         data: {
           userId: user.id,
           accountType: "owner",
-          displayName: user.name ?? undefined,
+          displayName: getAuthUserName(user),
           venueName,
           businessRole,
           phone,
