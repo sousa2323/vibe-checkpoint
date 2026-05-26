@@ -7,6 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import appCss from "../styles.css?url";
@@ -18,6 +19,12 @@ const browserProcessEnvScript = `globalThis.process=globalThis.process||{};globa
 const initialThemeScript = `(function(){try{var key=${JSON.stringify(
   THEME_STORAGE_KEY,
 )};var stored=localStorage.getItem(key);var theme=stored==='light'||stored==='dark'?stored:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.toggle('dark',theme==='dark');var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute('content',theme==='dark'?'#0D0D0D':'#F13A5A');}catch(error){}})();`;
+
+declare global {
+  interface Window {
+    __CHEGAAI_CAPACITOR_INITIAL_PATH?: string;
+  }
+}
 
 function NotFoundComponent() {
   return (
@@ -137,6 +144,15 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    const initialPath = window.__CHEGAAI_CAPACITOR_INITIAL_PATH;
+    if (!initialPath || initialPath === "/") return;
+
+    delete window.__CHEGAAI_CAPACITOR_INITIAL_PATH;
+    window.history.replaceState(window.history.state, "", initialPath);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

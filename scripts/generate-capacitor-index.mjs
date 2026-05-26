@@ -14,6 +14,7 @@ if (!response.ok) {
   );
 }
 
-const html = await response.text();
+const restoreRouteScript = `<script>(function(){try{var path=location.pathname+location.search+location.hash;if(path!=="/"){window.__CHEGAAI_CAPACITOR_INITIAL_PATH=path;history.replaceState(history.state,"","/");}}catch(error){}})();</script>`;
+const html = (await response.text()).replace("<head>", `<head>${restoreRouteScript}`);
 
 await writeFile(join(clientDir, "index.html"), html);

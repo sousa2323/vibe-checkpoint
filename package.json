@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build && node scripts/generate-capacitor-index.mjs",
+    "build:vercel": "vite build && node scripts/generate-vercel-output.mjs",
     "build:dev": "vite build --mode development",
     "android:sync": "npx cap sync android",
     "android:open": "npx cap open android",
