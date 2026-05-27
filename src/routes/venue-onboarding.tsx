@@ -277,29 +277,21 @@ function VenueOnboarding() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("saving");
-    setSavingMessage("Validando sessão...");
+    setSavingMessage(null);
     setError(null);
 
     if (isPending) {
       setStatus("idle");
+      setSavingMessage(null);
       setError("Aguarde a sessão carregar antes de salvar.");
       return;
     }
 
-    let currentUser: typeof user | null = user ?? null;
-    try {
-      currentUser =
-        (await withTimeout(session.refetch(), 10000, timeoutMessage("validar sua sessão"))).data
-          ?.user ?? null;
-    } catch (cause) {
-      setStatus("idle");
-      setSavingMessage(null);
-      setError(cause instanceof Error ? cause.message : "Não foi possível validar sua sessão.");
-      return;
-    }
+    const currentUser: typeof user | null = user ?? null;
 
     if (!currentUser?.id) {
       setStatus("idle");
+      setSavingMessage(null);
       setError("Sua sessão expirou. Entre novamente para continuar o cadastro.");
       navigate({ to: "/auth" });
       return;

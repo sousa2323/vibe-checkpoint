@@ -14,6 +14,32 @@ function getSupabaseAnonKey() {
   return key;
 }
 
+export function getSupabaseAuthStorageKey() {
+  const hostname = new URL(getSupabaseUrl()).hostname;
+  return `sb-${hostname.split(".")[0]}-auth-token`;
+}
+
+export function readSupabaseStoredAccessToken() {
+  if (typeof localStorage === "undefined") return null;
+
+  try {
+    const raw = localStorage.getItem(getSupabaseAuthStorageKey());
+    if (!raw) return null;
+
+    const session = JSON.parse(raw) as {
+      access_token?: unknown;
+      currentSession?: { access_token?: unknown };
+      session?: { access_token?: unknown };
+    };
+    const token =
+      session.access_token ?? session.currentSession?.access_token ?? session.session?.access_token;
+
+    return typeof token === "string" && token ? token : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getSupabaseBrowserClient() {
   if (!browserClient) {
     browserClient = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {

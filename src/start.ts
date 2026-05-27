@@ -1,6 +1,7 @@
 import { createCsrfMiddleware, createStart } from "@tanstack/react-start";
 
-import { getSupabaseBrowserClient } from "./lib/supabase-client";
+import { supabaseAccessTokenCookie } from "./lib/auth-cookie";
+import { readSupabaseStoredAccessToken } from "./lib/supabase-client";
 
 type ViteImportMeta = ImportMeta & {
   env?: Record<string, string | undefined>;
@@ -43,12 +44,23 @@ function isServerFnRequest(url: URL) {
   return url.pathname.startsWith(serverFnBase);
 }
 
-async function getServerFnHeaders(input: RequestInfo | URL, init?: RequestInit) {
+function getCookieValue(name: string) {
+  if (typeof document === "undefined") return null;
+
+  const cookie = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`));
+
+  return cookie ? decodeURIComponent(cookie.slice(name.length + 1)) : null;
+}
+
+function getServerFnHeaders(input: RequestInfo | URL, init?: RequestInit) {
   const headers = new Headers(
     init?.headers ?? (input instanceof Request ? input.headers : undefined),
   );
-  const { data } = await getSupabaseBrowserClient().auth.getSession();
-  const accessToken = data.session?.access_token;
+  const accessToken = getCookieValue(supabaseAccessTokenCookie) ?? readSupabaseStoredAccessToken();
+
   if (accessToken) {
     headers.set("authorization", `Bearer ${accessToken}`);
   }
@@ -67,7 +79,7 @@ async function capacitorServerFnFetch(input: RequestInfo | URL, init?: RequestIn
     return fetch(input, init);
   }
 
-  const headers = await getServerFnHeaders(input, init);
+  const headers = getServerFnHeaders(input, init);
   const serverFnOrigin = getCapacitorServerFnOrigin();
 
   if (!serverFnOrigin || !shouldProxyServerFn(requestUrl)) {
