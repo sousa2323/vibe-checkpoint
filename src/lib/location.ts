@@ -12,7 +12,7 @@ export type SavedLocation = Coordinates & {
 };
 
 const LOCATION_CONSENT_KEY = "chegaai:location-consent";
-const LOCATION_CACHE_KEY = "chegaai:last-location";
+const LOCATION_CACHE_KEY = "chegaai:last-location:v2";
 const RADIUS_PREFERENCE_KEY = "chegaai:radius-km";
 const LOCATION_MAX_AGE_MS = 30 * 60 * 1000;
 export const DEFAULT_RADIUS_KM = 10;

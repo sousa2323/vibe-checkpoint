@@ -2515,31 +2515,53 @@ export const reverseLocationLabel = createServerFn({ method: "GET" })
           city?: string;
           town?: string;
           village?: string;
+          hamlet?: string;
           municipality?: string;
           county?: string;
+          neighbourhood?: string;
           city_district?: string;
           suburb?: string;
+          quarter?: string;
+          residential?: string;
           state?: string;
           state_code?: string;
         };
       };
       const address = result.address;
-      const city =
-        address?.city ??
-        address?.town ??
-        address?.village ??
-        address?.municipality ??
-        address?.county ??
-        address?.city_district ??
-        address?.suburb;
+      const locality = firstFilled(
+        address?.neighbourhood,
+        address?.suburb,
+        address?.quarter,
+        address?.residential,
+        address?.city_district,
+        address?.hamlet,
+      );
+      const city = firstFilled(
+        address?.city,
+        address?.town,
+        address?.municipality,
+        address?.county,
+      );
+      const fallback = firstFilled(locality, city, address?.village);
       const uf = stateToUf(address?.state_code ?? address?.state);
-      if (!city) return null;
+      if (!fallback) return null;
 
-      return uf ? `${city} - ${uf}` : city;
+      const place =
+        locality && city && !samePlace(locality, city) ? `${locality}, ${city}` : fallback;
+
+      return uf ? `${place} - ${uf}` : place;
     } catch {
       return null;
     }
   });
+
+function firstFilled(...values: Array<string | undefined>) {
+  return values.map((value) => value?.trim()).find(Boolean);
+}
+
+function samePlace(a: string, b: string) {
+  return a.localeCompare(b, "pt-BR", { sensitivity: "base" }) === 0;
+}
 
 function stateToUf(value?: string) {
   if (!value) return undefined;
