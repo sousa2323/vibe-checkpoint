@@ -260,8 +260,7 @@ export const saveVenueClaimRequest = createServerFn({ method: "POST" })
 export const getOwnerVenueForOnboarding = createServerFn({ method: "GET" })
   .inputValidator((data: { userId?: string }) => data)
   .handler(async ({ data }): Promise<OwnerVenueOnboarding | null> => {
-    const userId = await getOptionalAuthenticatedUserId(data.userId);
-    if (!userId) return null;
+    const userId = await requireAuthenticatedUserId(data.userId);
 
     const sql = await getSql();
     if (!sql) return null;

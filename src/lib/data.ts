@@ -2207,8 +2207,7 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
       reviews: EMPTY_OWNER_REVIEW_STATS,
     };
 
-    const userId = await getOptionalAuthenticatedUserId(data.userId);
-    if (!userId) return empty;
+    const userId = await requireAuthenticatedUserId(data.userId);
 
     const sql = await getSql();
     if (!sql) return empty;

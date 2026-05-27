@@ -32,19 +32,23 @@ async function getAuthenticatedUserId(): Promise<AuthLookupResult> {
     ? getCookieValue(cookieHeader, supabaseAccessTokenCookie)
     : null;
   const bearerAccessToken = getBearerToken(headers.get("authorization"));
-  const accessToken = cookieAccessToken ?? bearerAccessToken;
+  const accessTokens = [bearerAccessToken, cookieAccessToken].filter(
+    (token, index, tokens): token is string => Boolean(token) && tokens.indexOf(token) === index,
+  );
 
-  if (!accessToken) return { userId: null, hadSessionCookie: false };
+  if (!accessTokens.length) return { userId: null, hadSessionCookie: false };
 
-  try {
-    const supabase = getSupabaseServerClient();
-    const { data, error } = await supabase.auth.getUser(accessToken);
-    if (error || !data.user?.id) return { userId: null, hadSessionCookie: true };
-
-    return { userId: data.user.id, hadSessionCookie: true };
-  } catch {
-    return { userId: null, hadSessionCookie: true };
+  const supabase = getSupabaseServerClient();
+  for (const accessToken of accessTokens) {
+    try {
+      const { data, error } = await supabase.auth.getUser(accessToken);
+      if (!error && data.user?.id) return { userId: data.user.id, hadSessionCookie: true };
+    } catch {
+      // Try the next available token. Bearer takes priority over cookie.
+    }
   }
+
+  return { userId: null, hadSessionCookie: true };
 }
 
 export async function requireAuthenticatedUserId(expectedUserId?: string) {

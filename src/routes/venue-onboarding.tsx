@@ -135,9 +135,18 @@ function normalizeInstagram(value: string) {
   return value.trim().replace(/^@+/, "");
 }
 
+function isAuthError(cause: unknown) {
+  return (
+    cause instanceof Error &&
+    (cause.message.includes("Usuário não autenticado") ||
+      cause.message.includes("Sessão não corresponde"))
+  );
+}
+
 function VenueOnboarding() {
   const navigate = useNavigate();
-  const { data } = authClient.useSession();
+  const session = authClient.useSession();
+  const { data, isPending } = session;
   const user = data?.user;
   const upload = useServerFn(uploadMedia);
   const saveVenue = useServerFn(createOrUpdateVenueForOwner);
@@ -154,40 +163,55 @@ function VenueOnboarding() {
   const [checkingAddress, setCheckingAddress] = useState(false);
 
   useEffect(() => {
+    if (isPending || user?.id) return;
+    navigate({ to: "/auth", replace: true });
+  }, [isPending, navigate, user?.id]);
+
+  useEffect(() => {
     if (!user?.id) return;
     let active = true;
 
     async function loadVenue() {
-      const venue = await getOwnerVenue({ data: { userId: user?.id } });
-      if (!active || !venue) return;
+      try {
+        const venue = await getOwnerVenue({ data: { userId: user?.id } });
+        if (!active || !venue) return;
 
-      setFormValues({
-        venueName: venue.venueName,
-        businessRole: venue.businessRole ?? "",
-        phone: venue.phone ?? "",
-        whatsapp: venue.whatsapp ?? "",
-        category: venue.category ?? "",
-        state: venue.state ?? "SP",
-        city: venue.city ?? "",
-        neighborhood: venue.neighborhood ?? "",
-        address: venue.address ?? "",
-        instagram: venue.instagram ? formatInstagram(venue.instagram) : "",
-        capacity: venue.capacity ? String(venue.capacity) : "",
-        description: venue.description ?? "",
-      });
-      setExistingCoverImageUrl(venue.coverImageUrl ?? null);
-      setPreview(venue.coverImageUrl ?? null);
-
-      if (venue.latitude != null && venue.longitude != null) {
-        const nextCoordinates = { latitude: venue.latitude, longitude: venue.longitude };
-        setCoordinates(nextCoordinates);
-        setAddressResult({
-          label: [venue.address, venue.neighborhood, venue.city, venue.state]
-            .filter(Boolean)
-            .join(", "),
-          ...nextCoordinates,
+        setFormValues({
+          venueName: venue.venueName,
+          businessRole: venue.businessRole ?? "",
+          phone: venue.phone ?? "",
+          whatsapp: venue.whatsapp ?? "",
+          category: venue.category ?? "",
+          state: venue.state ?? "SP",
+          city: venue.city ?? "",
+          neighborhood: venue.neighborhood ?? "",
+          address: venue.address ?? "",
+          instagram: venue.instagram ? formatInstagram(venue.instagram) : "",
+          capacity: venue.capacity ? String(venue.capacity) : "",
+          description: venue.description ?? "",
         });
-        setAddressStatus("Endereço já confirmado para este estabelecimento.");
+        setExistingCoverImageUrl(venue.coverImageUrl ?? null);
+        setPreview(venue.coverImageUrl ?? null);
+
+        if (venue.latitude != null && venue.longitude != null) {
+          const nextCoordinates = { latitude: venue.latitude, longitude: venue.longitude };
+          setCoordinates(nextCoordinates);
+          setAddressResult({
+            label: [venue.address, venue.neighborhood, venue.city, venue.state]
+              .filter(Boolean)
+              .join(", "),
+            ...nextCoordinates,
+          });
+          setAddressStatus("Endereço já confirmado para este estabelecimento.");
+        }
+      } catch (cause) {
+        if (!active) return;
+        if (isAuthError(cause)) {
+          setError("Sua sessão expirou. Entre novamente para continuar o cadastro.");
+          navigate({ to: "/auth", replace: true });
+          return;
+        }
+        setError("Não foi possível carregar seu estabelecimento agora.");
       }
     }
 
@@ -196,7 +220,7 @@ function VenueOnboarding() {
     return () => {
       active = false;
     };
-  }, [getOwnerVenue, user?.id]);
+  }, [getOwnerVenue, navigate, user?.id]);
 
   function updateField(name: keyof VenueFormValues, value: string) {
     setFormValues((current) => ({ ...current, [name]: value }));
@@ -253,8 +277,22 @@ function VenueOnboarding() {
     setStatus("saving");
     setError(null);
 
-    if (!user?.id) {
+    if (isPending) {
       setStatus("idle");
+      setError("Aguarde a sessão carregar antes de salvar.");
+      return;
+    }
+
+    let currentUser: typeof user | null = user ?? null;
+    try {
+      currentUser = (await session.refetch()).data?.user ?? null;
+    } catch {
+      currentUser = null;
+    }
+
+    if (!currentUser?.id) {
+      setStatus("idle");
+      setError("Sua sessão expirou. Entre novamente para continuar o cadastro.");
       navigate({ to: "/auth" });
       return;
     }
@@ -299,7 +337,7 @@ function VenueOnboarding() {
         const base64 = await fileToBase64(image);
         const media = await upload({
           data: {
-            userId: user.id,
+            userId: currentUser.id,
             mimeType: image.type,
             base64,
           },
@@ -311,9 +349,9 @@ function VenueOnboarding() {
 
       await saveVenue({
         data: {
-          userId: user.id,
+          userId: currentUser.id,
           accountType: "owner",
-          displayName: getAuthUserName(user),
+          displayName: getAuthUserName(currentUser),
           venueName,
           businessRole,
           phone,
@@ -337,6 +375,11 @@ function VenueOnboarding() {
       setTimeout(() => navigate({ to: "/venue-dashboard" }), 700);
     } catch (cause) {
       setStatus("idle");
+      if (isAuthError(cause)) {
+        setError("Sua sessão expirou. Entre novamente para salvar o estabelecimento.");
+        navigate({ to: "/auth" });
+        return;
+      }
       setError(
         cause instanceof Error ? cause.message : "Não foi possível salvar o estabelecimento.",
       );
@@ -573,7 +616,12 @@ function VenueOnboarding() {
             </p>
           ) : null}
 
-          <PillButton type="submit" size="lg" className="w-full" disabled={status === "saving"}>
+          <PillButton
+            type="submit"
+            size="lg"
+            className="w-full"
+            disabled={status === "saving" || isPending}
+          >
             {status === "saving" ? "Salvando..." : "Finalizar cadastro"}
           </PillButton>
         </form>

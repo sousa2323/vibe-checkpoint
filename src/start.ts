@@ -39,20 +39,11 @@ function shouldProxyServerFn(url: URL) {
   );
 }
 
-async function capacitorServerFnFetch(input: RequestInfo | URL, init?: RequestInit) {
-  if (typeof window === "undefined") {
-    return fetch(input, init);
-  }
+function isServerFnRequest(url: URL) {
+  return url.pathname.startsWith(serverFnBase);
+}
 
-  const inputUrl = input instanceof Request ? input.url : input.toString();
-  const requestUrl = new URL(inputUrl, window.location.href);
-  const serverFnOrigin = getCapacitorServerFnOrigin();
-
-  if (!serverFnOrigin || !shouldProxyServerFn(requestUrl)) {
-    return fetch(input, init);
-  }
-
-  const proxiedUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, serverFnOrigin);
+async function getServerFnHeaders(input: RequestInfo | URL, init?: RequestInit) {
   const headers = new Headers(
     init?.headers ?? (input instanceof Request ? input.headers : undefined),
   );
@@ -61,6 +52,29 @@ async function capacitorServerFnFetch(input: RequestInfo | URL, init?: RequestIn
   if (accessToken) {
     headers.set("authorization", `Bearer ${accessToken}`);
   }
+
+  return headers;
+}
+
+async function capacitorServerFnFetch(input: RequestInfo | URL, init?: RequestInit) {
+  if (typeof window === "undefined") {
+    return fetch(input, init);
+  }
+
+  const inputUrl = input instanceof Request ? input.url : input.toString();
+  const requestUrl = new URL(inputUrl, window.location.href);
+  if (!isServerFnRequest(requestUrl)) {
+    return fetch(input, init);
+  }
+
+  const headers = await getServerFnHeaders(input, init);
+  const serverFnOrigin = getCapacitorServerFnOrigin();
+
+  if (!serverFnOrigin || !shouldProxyServerFn(requestUrl)) {
+    return fetch(input, { ...init, headers });
+  }
+
+  const proxiedUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, serverFnOrigin);
 
   return fetch(proxiedUrl, {
     ...init,

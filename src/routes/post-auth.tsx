@@ -74,6 +74,8 @@ function PostAuth() {
   const getProfile = useServerFn(getUserProfile);
   const saveProfile = useServerFn(saveUserProfile);
   const [message, setMessage] = useState("Preparando sua experiência...");
+  const [error, setError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     if (isPending || user) return;
@@ -92,6 +94,7 @@ function PostAuth() {
     let cancelled = false;
 
     async function routeByProfile() {
+      setError(null);
       setMessage("Encontrando seu perfil no ChegaAí...");
       const authUserName = getAuthUserName(currentUser);
       try {
@@ -149,18 +152,18 @@ function PostAuth() {
       }
     }
 
-    routeByProfile().catch(() => {
-      const fallbackType = getRequestedAccountType(currentUser);
-      navigate({
-        to: fallbackType === "owner" ? "/venue-onboarding" : "/discover",
-        replace: true,
-      });
+    routeByProfile().catch((cause) => {
+      if (cancelled) return;
+      setMessage("Não foi possível confirmar sua sessão.");
+      setError(
+        cause instanceof Error ? cause.message : "Entre novamente para continuar com segurança.",
+      );
     });
 
     return () => {
       cancelled = true;
     };
-  }, [getProfile, navigate, saveProfile, user]);
+  }, [getProfile, navigate, retryKey, saveProfile, user]);
 
   return (
     <main className="app-shell flex flex-col items-center justify-center bg-background px-8 text-center">
@@ -169,6 +172,25 @@ function PostAuth() {
       </div>
       <h1 className="mt-6 text-2xl font-black tracking-tight">Quase lá</h1>
       <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">{message}</p>
+      {error ? (
+        <div className="mt-5 flex w-full max-w-xs flex-col gap-2">
+          <p className="text-sm font-semibold text-primary">{error}</p>
+          <button
+            type="button"
+            onClick={() => setRetryKey((current) => current + 1)}
+            className="rounded-full bg-ink px-4 py-3 text-sm font-bold text-white"
+          >
+            Tentar novamente
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate({ to: "/auth", replace: true })}
+            className="rounded-full bg-muted px-4 py-3 text-sm font-bold text-foreground"
+          >
+            Entrar novamente
+          </button>
+        </div>
+      ) : null}
     </main>
   );
 }
