@@ -9,6 +9,21 @@ export const Route = createFileRoute("/post-auth")({
   component: PostAuth,
 });
 
+function toAccountType(value: unknown): AccountType {
+  return value === "owner" ? "owner" : "explorer";
+}
+
+function getUrlAccountType(): AccountType {
+  if (typeof window === "undefined") return "explorer";
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return toAccountType(params.get("account_type") ?? params.get("accountType"));
+  } catch {
+    return "explorer";
+  }
+}
+
 function getStoredAccountType(): AccountType {
   let mode: string | null = null;
   let signupType: string | null = null;
@@ -20,23 +35,27 @@ function getStoredAccountType(): AccountType {
     return "explorer";
   }
 
-  if (mode === "signup" && signupType === "owner") return "owner";
-  return "explorer";
+  if (mode === "login") return "explorer";
+  return toAccountType(signupType);
 }
 
 function getMetadataAccountType(user: unknown): AccountType {
   if (!user || typeof user !== "object" || !("user_metadata" in user)) return "explorer";
 
   const metadata = user.user_metadata;
-  if (!metadata || typeof metadata !== "object" || !("account_type" in metadata)) return "explorer";
+  if (!metadata || typeof metadata !== "object") return "explorer";
 
-  return metadata.account_type === "owner" ? "owner" : "explorer";
+  const metadataRecord = metadata as Record<string, unknown>;
+  return toAccountType(metadataRecord.account_type ?? metadataRecord.accountType);
 }
 
 function getRequestedAccountType(user: unknown): AccountType {
-  return getStoredAccountType() === "owner" || getMetadataAccountType(user) === "owner"
-    ? "owner"
-    : "explorer";
+  const requestedTypes = [
+    getUrlAccountType(),
+    getStoredAccountType(),
+    getMetadataAccountType(user),
+  ];
+  return requestedTypes.includes("owner") ? "owner" : "explorer";
 }
 
 function clearStoredAuthIntent() {

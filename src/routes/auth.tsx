@@ -15,6 +15,21 @@ export const Route = createFileRoute("/auth")({
 type Tab = "login" | "signup";
 type AccountType = "explorer" | "owner";
 
+function writeSignupIntent(accountType: AccountType) {
+  try {
+    localStorage.setItem("chegaai:auth-mode", "signup");
+    localStorage.setItem("chegaai:signup-account-type", accountType);
+  } catch {
+    // Browsers can block storage in stricter privacy modes.
+  }
+}
+
+function getPostAuthRedirectUrl(accountType: AccountType) {
+  const url = new URL("/post-auth", window.location.origin);
+  url.searchParams.set("account_type", accountType);
+  return url.toString();
+}
+
 function Auth() {
   const navigate = useNavigate();
   const session = authClient.useSession();
@@ -35,15 +50,21 @@ function Auth() {
   }, [data?.user?.id, isPending, navigate]);
 
   useEffect(() => {
-    localStorage.setItem("chegaai:auth-mode", tab);
-    if (tab === "signup") {
-      localStorage.setItem("chegaai:signup-account-type", accountType);
+    try {
+      localStorage.setItem("chegaai:auth-mode", tab);
+      if (tab === "signup") {
+        localStorage.setItem("chegaai:signup-account-type", accountType);
+      } else {
+        localStorage.removeItem("chegaai:signup-account-type");
+      }
+    } catch {
+      // Browsers can block storage in stricter privacy modes.
     }
   }, [accountType, tab]);
 
   const selectAccountType = (type: AccountType) => {
     setAccountType(type);
-    localStorage.setItem("chegaai:signup-account-type", type);
+    writeSignupIntent(type);
   };
 
   const finishLogin = async () => {
@@ -333,6 +354,8 @@ function SignupForm({
     setStatus("Criando conta...");
 
     try {
+      writeSignupIntent(accountType);
+
       const result = await authClient.signUp.email({
         email: trimmedEmail,
         password,
@@ -340,8 +363,9 @@ function SignupForm({
           data: {
             name: trimmedName || undefined,
             account_type: accountType,
+            accountType,
           },
-          emailRedirectTo: `${window.location.origin}/post-auth`,
+          emailRedirectTo: getPostAuthRedirectUrl(accountType),
         },
       });
 
