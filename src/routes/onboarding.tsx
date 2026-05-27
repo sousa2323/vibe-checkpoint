@@ -84,7 +84,7 @@ function Onboarding() {
         <button
           type="button"
           onClick={goToAuth}
-          className="absolute right-5 top-[calc(env(safe-area-inset-top)+1.25rem)] rounded-full bg-white/90 px-4 py-2 text-sm font-bold text-foreground shadow-sm backdrop-blur"
+          className="absolute right-5 top-[calc(env(safe-area-inset-top)+1.25rem)] rounded-full border border-white/20 bg-black/35 px-4 py-2 text-sm font-bold text-white shadow-sm backdrop-blur-md transition-colors active:bg-black/45"
         >
           Pular
         </button>
