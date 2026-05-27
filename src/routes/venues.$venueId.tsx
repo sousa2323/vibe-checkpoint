@@ -196,7 +196,22 @@ function VenueDetailPage() {
       </div>
 
       <section className="-mt-8 relative z-10 px-6">
-        <h1 className="text-3xl font-black leading-tight tracking-tight">{venue.name}</h1>
+        <div className="flex items-start gap-3">
+          <h1 className="min-w-0 flex-1 text-3xl font-black leading-tight tracking-tight">
+            {venue.name}
+          </h1>
+          {venue.instagram ? (
+            <a
+              href={instagramUrl(venue.instagram)}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Abrir Instagram de ${venue.name}`}
+              className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-foreground transition-colors hover:bg-primary hover:text-white"
+            >
+              <Instagram className="h-4 w-4" />
+            </a>
+          ) : null}
+        </div>
         <p className="mt-2 flex items-center gap-1 text-sm text-muted-foreground">
           <MapPin className="h-4 w-4" />
           {venue.address ?? venue.neighborhood}
@@ -246,17 +261,6 @@ function VenueDetailPage() {
             <Share2 className="h-4 w-4" />
             Enviar
           </button>
-          {venue.instagram ? (
-            <a
-              href={instagramUrl(venue.instagram)}
-              target="_blank"
-              rel="noreferrer"
-              className="flex h-12 items-center justify-center gap-2 rounded-full bg-muted text-sm font-bold"
-            >
-              <Instagram className="h-4 w-4" />
-              Instagram
-            </a>
-          ) : null}
           <button
             type="button"
             onClick={() => void onCheckin()}

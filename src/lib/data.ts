@@ -1580,6 +1580,7 @@ export const getVenueDetails = createServerFn({ method: "GET" })
         v.neighborhood,
         v.city,
         v.address,
+        v.instagram,
         v.latitude,
         v.longitude,
         v.cover_image_url,
