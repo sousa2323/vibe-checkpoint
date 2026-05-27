@@ -8,6 +8,7 @@ type ViteImportMeta = ImportMeta & {
 
 const serverFnBase = "/_serverFn/";
 const capacitorOrigins = new Set(["https://localhost", "capacitor://localhost"]);
+const defaultCapacitorServerFnOrigin = "https://vibe-checkpoint.vercel.app";
 
 const csrfMiddleware = createCsrfMiddleware({
   filter: (ctx) => ctx.handlerType === "serverFn",
@@ -23,7 +24,10 @@ const csrfMiddleware = createCsrfMiddleware({
 });
 
 function getCapacitorServerFnOrigin() {
-  return (import.meta as ViteImportMeta).env?.VITE_CAPACITOR_SERVER_FN_ORIGIN?.replace(/\/$/, "");
+  return (
+    (import.meta as ViteImportMeta).env?.VITE_CAPACITOR_SERVER_FN_ORIGIN?.replace(/\/$/, "") ??
+    defaultCapacitorServerFnOrigin
+  );
 }
 
 function shouldProxyServerFn(url: URL) {
