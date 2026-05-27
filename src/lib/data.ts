@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql, type SqlClient, uniqueSlug } from "./db";
 import { getOptionalAuthenticatedUserId, requireAuthenticatedUserId } from "./server-auth";
+import { fetchWithTimeout, timeoutMessage } from "./timeout";
 
 export interface EventSummary {
   id: string;
@@ -2465,12 +2466,17 @@ export const searchLocation = createServerFn({ method: "GET" })
     url.searchParams.set("q", /brasil/i.test(query) ? query : `${query}, Brasil`);
 
     try {
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "ChegaAi/1.0 geolocation contact: admin@chegaai.local",
-          Accept: "application/json",
+      const response = await fetchWithTimeout(
+        url,
+        {
+          headers: {
+            "User-Agent": "ChegaAi/1.0 geolocation contact: admin@chegaai.local",
+            Accept: "application/json",
+          },
         },
-      });
+        8000,
+        timeoutMessage("buscar o endereço no mapa"),
+      );
       if (!response.ok) return null;
 
       const results = (await response.json()) as Array<{
@@ -2501,12 +2507,17 @@ export const reverseLocationLabel = createServerFn({ method: "GET" })
     url.searchParams.set("lon", String(data.longitude));
 
     try {
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "ChegaAi/1.0 geolocation contact: admin@chegaai.local",
-          Accept: "application/json",
+      const response = await fetchWithTimeout(
+        url,
+        {
+          headers: {
+            "User-Agent": "ChegaAi/1.0 geolocation contact: admin@chegaai.local",
+            Accept: "application/json",
+          },
         },
-      });
+        8000,
+        timeoutMessage("buscar o endereço no mapa"),
+      );
       if (!response.ok) return null;
 
       const result = (await response.json()) as {

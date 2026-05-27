@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireAuthenticatedUserId } from "./server-auth";
 import { ensureMediaBucket, getMediaBucketName, getSupabaseServerClient } from "./supabase-server";
+import { timeoutMessage, withTimeout } from "./timeout";
 
 const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp"] as const;
 const maxImageBytes = 2 * 1024 * 1024;
@@ -39,10 +40,14 @@ export const uploadMedia = createServerFn({ method: "POST" })
     const path = `${userId}/${crypto.randomUUID()}.${extension}`;
     const bytes = Buffer.from(cleanBase64, "base64");
 
-    const { error } = await supabase.storage.from(bucket).upload(path, bytes, {
-      contentType: data.mimeType,
-      upsert: false,
-    });
+    const { error } = await withTimeout(
+      supabase.storage.from(bucket).upload(path, bytes, {
+        contentType: data.mimeType,
+        upsert: false,
+      }),
+      20000,
+      timeoutMessage("enviar a imagem"),
+    );
     if (error) throw error;
 
     const { data: publicUrl } = supabase.storage.from(getMediaBucketName()).getPublicUrl(path);

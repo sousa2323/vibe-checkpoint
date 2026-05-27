@@ -21,6 +21,11 @@ type TaggedSql = (
 
 let cachedSql: TaggedSql | null = null;
 
+function readPositiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export async function getSql() {
   const databaseUrl = getDatabaseUrl();
   if (!databaseUrl) return null;
@@ -30,6 +35,9 @@ export async function getSql() {
   const pool = new Pool({
     connectionString: databaseUrl,
     max: 5,
+    connectionTimeoutMillis: readPositiveInteger(process.env.DATABASE_CONNECTION_TIMEOUT_MS, 10000),
+    query_timeout: readPositiveInteger(process.env.DATABASE_QUERY_TIMEOUT_MS, 15000),
+    statement_timeout: readPositiveInteger(process.env.DATABASE_STATEMENT_TIMEOUT_MS, 15000),
     ssl: databaseUrl.includes("sslmode=disable") ? undefined : { rejectUnauthorized: false },
   });
 

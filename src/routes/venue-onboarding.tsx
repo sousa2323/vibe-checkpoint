@@ -30,6 +30,7 @@ import { uploadMedia } from "@/lib/media";
 import type { Coordinates } from "@/lib/location";
 import { searchLocation, type LocationLookupResult } from "@/lib/data";
 import { createOrUpdateVenueForOwner, getOwnerVenueForOnboarding } from "@/lib/profile-actions";
+import { timeoutMessage, withTimeout } from "@/lib/timeout";
 
 export const Route = createFileRoute("/venue-onboarding")({
   component: VenueOnboarding,
@@ -153,6 +154,7 @@ function VenueOnboarding() {
   const findLocation = useServerFn(searchLocation);
   const getOwnerVenue = useServerFn(getOwnerVenueForOnboarding);
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [savingMessage, setSavingMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<VenueFormValues>(emptyFormValues);
@@ -275,6 +277,7 @@ function VenueOnboarding() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("saving");
+    setSavingMessage("Validando sessão...");
     setError(null);
 
     if (isPending) {
@@ -285,9 +288,14 @@ function VenueOnboarding() {
 
     let currentUser: typeof user | null = user ?? null;
     try {
-      currentUser = (await session.refetch()).data?.user ?? null;
-    } catch {
-      currentUser = null;
+      currentUser =
+        (await withTimeout(session.refetch(), 10000, timeoutMessage("validar sua sessão"))).data
+          ?.user ?? null;
+    } catch (cause) {
+      setStatus("idle");
+      setSavingMessage(null);
+      setError(cause instanceof Error ? cause.message : "Não foi possível validar sua sessão.");
+      return;
     }
 
     if (!currentUser?.id) {
@@ -334,47 +342,59 @@ function VenueOnboarding() {
     try {
       let coverImageUrl = existingCoverImageUrl;
       if (image) {
+        setSavingMessage("Enviando imagem...");
         const base64 = await fileToBase64(image);
-        const media = await upload({
-          data: {
-            userId: currentUser.id,
-            mimeType: image.type,
-            base64,
-          },
-        });
+        const media = await withTimeout(
+          upload({
+            data: {
+              userId: currentUser.id,
+              mimeType: image.type,
+              base64,
+            },
+          }),
+          30000,
+          timeoutMessage("enviar a imagem"),
+        );
         coverImageUrl = media.mediaUrl;
       }
 
       if (!coverImageUrl) throw new Error("Envie uma imagem real do local.");
 
-      await saveVenue({
-        data: {
-          userId: currentUser.id,
-          accountType: "owner",
-          displayName: getAuthUserName(currentUser),
-          venueName,
-          businessRole,
-          phone,
-          category,
-          state,
-          city,
-          neighborhood,
-          address,
-          instagram: instagram || undefined,
-          whatsapp: whatsapp || undefined,
-          capacity: capacity || undefined,
-          description: description || undefined,
-          latitude: coordinates?.latitude,
-          longitude: coordinates?.longitude,
-          coverImageUrl,
-          onboardingCompleted: true,
-        },
-      });
+      setSavingMessage("Salvando estabelecimento...");
+      await withTimeout(
+        saveVenue({
+          data: {
+            userId: currentUser.id,
+            accountType: "owner",
+            displayName: getAuthUserName(currentUser),
+            venueName,
+            businessRole,
+            phone,
+            category,
+            state,
+            city,
+            neighborhood,
+            address,
+            instagram: instagram || undefined,
+            whatsapp: whatsapp || undefined,
+            capacity: capacity || undefined,
+            description: description || undefined,
+            latitude: coordinates?.latitude,
+            longitude: coordinates?.longitude,
+            coverImageUrl,
+            onboardingCompleted: true,
+          },
+        }),
+        30000,
+        timeoutMessage("salvar o estabelecimento"),
+      );
 
       setStatus("saved");
+      setSavingMessage(null);
       setTimeout(() => navigate({ to: "/venue-dashboard" }), 700);
     } catch (cause) {
       setStatus("idle");
+      setSavingMessage(null);
       if (isAuthError(cause)) {
         setError("Sua sessão expirou. Entre novamente para salvar o estabelecimento.");
         navigate({ to: "/auth" });
@@ -622,7 +642,7 @@ function VenueOnboarding() {
             className="w-full"
             disabled={status === "saving" || isPending}
           >
-            {status === "saving" ? "Salvando..." : "Finalizar cadastro"}
+            {status === "saving" ? savingMessage || "Salvando..." : "Finalizar cadastro"}
           </PillButton>
         </form>
       </div>

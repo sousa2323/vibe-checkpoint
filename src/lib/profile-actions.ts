@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql, uniqueSlug } from "./db";
 import { getOptionalAuthenticatedUserId, requireAuthenticatedUserId } from "./server-auth";
+import { fetchWithTimeout, timeoutMessage } from "./timeout";
 
 export type AccountType = "explorer" | "owner";
 
@@ -477,12 +478,17 @@ async function geocodeVenueAddress(data: SaveVenueClaimInput) {
   url.searchParams.set("q", parts.join(", "));
 
   try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "ChegaAi/1.0 geolocation contact: admin@chegaai.local",
-        Accept: "application/json",
+    const response = await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          "User-Agent": "ChegaAi/1.0 geolocation contact: admin@chegaai.local",
+          Accept: "application/json",
+        },
       },
-    });
+      8000,
+      timeoutMessage("buscar o endereço no mapa"),
+    );
     if (!response.ok) return null;
 
     const results = (await response.json()) as Array<{ lat?: string; lon?: string }>;
