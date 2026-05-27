@@ -1,3 +1,6 @@
+import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
+
 export type Coordinates = {
   latitude: number;
   longitude: number;
@@ -39,7 +42,43 @@ export function formatDistance(km?: number) {
   return `${km.toFixed(km < 10 ? 1 : 0).replace(".", ",")} km`;
 }
 
-export function requestCurrentLocation() {
+export async function requestCurrentLocation() {
+  if (Capacitor.isNativePlatform()) return requestNativeCurrentLocation();
+
+  return requestBrowserCurrentLocation();
+}
+
+export async function canRestoreLocation() {
+  const savedConsent = readLocationConsent();
+
+  if (Capacitor.isNativePlatform()) {
+    if (!savedConsent) return false;
+
+    try {
+      const permission = await Geolocation.checkPermissions();
+      return permission.location === "granted" || permission.coarseLocation === "granted";
+    } catch {
+      return false;
+    }
+  }
+
+  if (typeof navigator === "undefined" || !navigator.geolocation) return false;
+
+  if (navigator.permissions?.query) {
+    try {
+      const permission = await navigator.permissions.query({
+        name: "geolocation" as PermissionName,
+      });
+      return permission.state === "granted" || (savedConsent && permission.state !== "denied");
+    } catch {
+      return savedConsent;
+    }
+  }
+
+  return savedConsent;
+}
+
+function requestBrowserCurrentLocation() {
   return new Promise<Coordinates>((resolve, reject) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       reject(new Error("Geolocalização indisponível neste dispositivo."));
@@ -60,22 +99,30 @@ export function requestCurrentLocation() {
   });
 }
 
-export async function canRestoreLocation() {
-  if (typeof navigator === "undefined" || !navigator.geolocation) return false;
-
-  const savedConsent = readLocationConsent();
-  if (navigator.permissions?.query) {
-    try {
-      const permission = await navigator.permissions.query({
-        name: "geolocation" as PermissionName,
-      });
-      return permission.state === "granted" || (savedConsent && permission.state !== "denied");
-    } catch {
-      return savedConsent;
+async function requestNativeCurrentLocation() {
+  try {
+    const permission = await Geolocation.checkPermissions();
+    if (permission.location !== "granted" && permission.coarseLocation !== "granted") {
+      const requested = await Geolocation.requestPermissions();
+      if (requested.location !== "granted" && requested.coarseLocation !== "granted") {
+        throw new Error("Permita a localização ou digite uma região para ver locais próximos.");
+      }
     }
-  }
 
-  return savedConsent;
+    const position = await Geolocation.getCurrentPosition({
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 5 * 60 * 1000,
+    });
+
+    return {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+    };
+  } catch (cause) {
+    if (cause instanceof Error && cause.message) throw cause;
+    throw new Error("Permita a localização ou digite uma região para ver locais próximos.");
+  }
 }
 
 export function readLocationConsent() {
