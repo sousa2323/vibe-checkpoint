@@ -10,11 +10,42 @@ export const Route = createFileRoute("/post-auth")({
 });
 
 function getStoredAccountType(): AccountType {
-  const mode = localStorage.getItem("chegaai:auth-mode");
-  const signupType = localStorage.getItem("chegaai:signup-account-type");
+  let mode: string | null = null;
+  let signupType: string | null = null;
+
+  try {
+    mode = localStorage.getItem("chegaai:auth-mode");
+    signupType = localStorage.getItem("chegaai:signup-account-type");
+  } catch {
+    return "explorer";
+  }
 
   if (mode === "signup" && signupType === "owner") return "owner";
   return "explorer";
+}
+
+function getMetadataAccountType(user: unknown): AccountType {
+  if (!user || typeof user !== "object" || !("user_metadata" in user)) return "explorer";
+
+  const metadata = user.user_metadata;
+  if (!metadata || typeof metadata !== "object" || !("account_type" in metadata)) return "explorer";
+
+  return metadata.account_type === "owner" ? "owner" : "explorer";
+}
+
+function getRequestedAccountType(user: unknown): AccountType {
+  return getStoredAccountType() === "owner" || getMetadataAccountType(user) === "owner"
+    ? "owner"
+    : "explorer";
+}
+
+function clearStoredAuthIntent() {
+  try {
+    localStorage.removeItem("chegaai:signup-account-type");
+    localStorage.removeItem("chegaai:auth-mode");
+  } catch {
+    // Browsers can block storage in stricter privacy modes.
+  }
 }
 
 function PostAuth() {
@@ -51,14 +82,11 @@ function PostAuth() {
       }
 
       const profile = await getProfile({ data: { userId: currentUser.id } });
-      const storedAccountType = getStoredAccountType();
+      const requestedAccountType = getRequestedAccountType(currentUser);
       const accountType =
-        storedAccountType === "owner" && profile?.accountType !== "owner"
+        requestedAccountType === "owner" && profile?.accountType !== "owner"
           ? "owner"
-          : (profile?.accountType ?? storedAccountType);
-
-      localStorage.removeItem("chegaai:signup-account-type");
-      localStorage.removeItem("chegaai:auth-mode");
+          : (profile?.accountType ?? requestedAccountType);
 
       if (accountType === "owner") {
         if (profile?.accountType !== "owner") {
@@ -71,6 +99,8 @@ function PostAuth() {
             },
           });
         }
+
+        clearStoredAuthIntent();
 
         if (!cancelled) {
           navigate({
@@ -93,13 +123,15 @@ function PostAuth() {
         },
       });
 
+      clearStoredAuthIntent();
+
       if (!cancelled) {
         navigate({ to: "/discover", replace: true });
       }
     }
 
     routeByProfile().catch(() => {
-      const fallbackType = getStoredAccountType();
+      const fallbackType = getRequestedAccountType(currentUser);
       navigate({
         to: fallbackType === "owner" ? "/venue-onboarding" : "/discover",
         replace: true,
