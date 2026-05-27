@@ -26,7 +26,7 @@ function Splash() {
 
     const t = setTimeout(() => {
       if (user?.id) {
-        navigate({ to: "/profile", replace: true });
+        navigate({ to: "/post-auth", replace: true });
         return;
       }
 

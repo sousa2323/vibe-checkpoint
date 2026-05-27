@@ -54,7 +54,7 @@ function Onboarding() {
       // Browsers can block storage in stricter privacy modes.
     }
 
-    navigate({ to: "/profile", replace: true });
+    navigate({ to: "/post-auth", replace: true });
   }, [isPending, navigate, user?.id]);
 
   function goToAuth() {

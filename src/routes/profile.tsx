@@ -39,6 +39,17 @@ export const Route = createFileRoute("/profile")({
   component: Profile,
 });
 
+function getMetadataAccountType(user: unknown): AccountType {
+  if (!user || typeof user !== "object" || !("user_metadata" in user)) return "explorer";
+
+  const metadata = user.user_metadata;
+  if (!metadata || typeof metadata !== "object") return "explorer";
+
+  const metadataRecord = metadata as Record<string, unknown>;
+  const accountType = metadataRecord.account_type ?? metadataRecord.accountType;
+  return accountType === "owner" ? "owner" : "explorer";
+}
+
 function Profile() {
   const navigate = useNavigate();
   const { data, isPending } = authClient.useSession();
@@ -49,6 +60,7 @@ function Profile() {
   const loadActivityStats = useServerFn(getUserActivityStats);
   const upload = useServerFn(uploadMedia);
   const { isDark, toggleTheme } = useAppTheme();
+  const metadataAccountType = getMetadataAccountType(user);
   const [accountType, setAccountType] = useState<AccountType>("explorer");
   const [profile, setProfile] = useState<UserProfileSummary | null>(null);
   const [dashboard, setDashboard] = useState<OwnerDashboard | null>(null);
@@ -82,6 +94,16 @@ function Profile() {
         const nextProfile = await getProfile({ data: { userId: user.id } });
         if (cancelled) return;
 
+        if (metadataAccountType === "owner" && nextProfile?.accountType !== "owner") {
+          navigate({ to: "/post-auth", replace: true });
+          return;
+        }
+
+        if (nextProfile?.accountType === "owner" && !nextProfile.onboardingCompleted) {
+          navigate({ to: "/venue-onboarding", replace: true });
+          return;
+        }
+
         const nextAccountType = nextProfile?.accountType ?? "explorer";
         setProfile(nextProfile);
         setAccountType(nextAccountType);
@@ -114,7 +136,15 @@ function Profile() {
     return () => {
       cancelled = true;
     };
-  }, [getProfile, isPending, loadActivityStats, loadDashboard, navigate, user?.id]);
+  }, [
+    getProfile,
+    isPending,
+    loadActivityStats,
+    loadDashboard,
+    metadataAccountType,
+    navigate,
+    user?.id,
+  ]);
 
   const isOwner = accountType === "owner";
   const venue = dashboard?.venue;
