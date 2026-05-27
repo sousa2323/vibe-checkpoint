@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { LoaderCircle } from "lucide-react";
 import { useEffect } from "react";
 import { authClient } from "@/auth";
 
@@ -31,7 +32,7 @@ function Splash() {
       }
 
       navigate({ to: seen ? "/auth" : "/onboarding", replace: true });
-    }, 700);
+    }, 250);
     return () => clearTimeout(t);
   }, [isPending, navigate, user?.id]);
 
@@ -44,21 +45,8 @@ function Splash() {
           C
         </div>
         <h1 className="text-3xl font-black tracking-tight">ChegaAí</h1>
-        <p className="text-sm text-muted-foreground">Onde a noite acontece agora</p>
-        <div className="mt-6 flex w-full min-w-64 gap-3">
-          <a
-            href="/onboarding"
-            className="flex-1 rounded-full bg-primary px-5 py-3 text-center text-sm font-bold text-primary-foreground shadow-sm"
-          >
-            Começar
-          </a>
-          <a
-            href="/auth"
-            className="flex-1 rounded-full border border-border bg-card px-5 py-3 text-center text-sm font-bold text-card-foreground shadow-sm"
-          >
-            Entrar
-          </a>
-        </div>
+        <p className="text-sm text-muted-foreground">Preparando sua experiência...</p>
+        <LoaderCircle className="mt-4 h-5 w-5 animate-spin text-primary" />
       </div>
     </main>
   );
