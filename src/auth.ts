@@ -106,6 +106,27 @@ export const authClient = {
       return { data: toAuthSessionData(data.session), needsEmailConfirmation: !data.session };
     },
   },
+  resetPassword: {
+    email: async ({ email, redirectTo }: { email: string; redirectTo: string }) => {
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+      if (error) throw error;
+      return { data };
+    },
+  },
+  exchangeCodeForSession: async (code: string) => {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) throw error;
+    writeAccessTokenCookie(data.session);
+    return { data: toAuthSessionData(data.session) };
+  },
+  updatePassword: async ({ password }: { password: string }) => {
+    const supabase = getSupabaseBrowserClient();
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+    return getCurrentSession();
+  },
   signOut: async () => {
     const supabase = getSupabaseBrowserClient();
     const { error } = await supabase.auth.signOut();

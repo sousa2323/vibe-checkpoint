@@ -14,6 +14,7 @@ export const Route = createFileRoute("/auth")({
 
 type Tab = "login" | "signup";
 type AccountType = "explorer" | "owner";
+const publicAppOrigin = "https://vibe-checkpoint.vercel.app";
 
 function writeSignupIntent(accountType: AccountType) {
   try {
@@ -28,6 +29,14 @@ function getPostAuthRedirectUrl(accountType: AccountType) {
   const url = new URL("/post-auth", window.location.origin);
   url.searchParams.set("account_type", accountType);
   return url.toString();
+}
+
+function getPasswordResetRedirectUrl() {
+  const origin = ["https://localhost", "capacitor://localhost"].includes(window.location.origin)
+    ? publicAppOrigin
+    : window.location.origin;
+
+  return new URL("/reset-password", origin).toString();
 }
 
 function Auth() {
@@ -202,6 +211,7 @@ function LoginForm({
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -244,11 +254,94 @@ function LoginForm({
     }
   };
 
+  const submitPasswordRecovery = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setStatus("Informe seu email para recuperar a senha.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatus("Enviando link de recuperação...");
+
+    try {
+      await authClient.resetPassword.email({
+        email: trimmedEmail,
+        redirectTo: getPasswordResetRedirectUrl(),
+      });
+      setStatus("Enviamos um link para redefinir sua senha. Confira seu email.");
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const submitOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
-    if (!isSubmitting) void submit();
+    if (isSubmitting) return;
+    if (isRecoveringPassword) void submitPasswordRecovery();
+    else void submit();
   };
+
+  if (isRecoveringPassword) {
+    return (
+      <div className="rounded-2xl border border-border bg-background p-6 shadow-sm">
+        <div className="mb-6">
+          <h2 className="text-xl font-bold">Recuperar senha</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Informe seu email e enviaremos um link para criar uma nova senha.
+          </p>
+        </div>
+
+        <div className="grid gap-5">
+          <div className="grid gap-2">
+            <Label htmlFor="recovery-email">Email</Label>
+            <Input
+              id="recovery-email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              placeholder="voce@email.com"
+              value={email}
+              disabled={isSubmitting}
+              onChange={(event) => setEmail(event.target.value)}
+              onKeyDown={submitOnEnter}
+            />
+          </div>
+
+          {status ? (
+            <p className="rounded-xl bg-muted px-3 py-2 text-sm text-muted-foreground">{status}</p>
+          ) : null}
+
+          <Button
+            type="button"
+            className="h-10 rounded-xl bg-primary"
+            disabled={isSubmitting}
+            onClick={() => void submitPasswordRecovery()}
+          >
+            {isSubmitting ? "Enviando..." : "Enviar link"}
+          </Button>
+        </div>
+
+        <p className="mt-6 text-center text-sm text-muted-foreground">
+          Lembrou a senha?{" "}
+          <button
+            type="button"
+            className="font-medium text-foreground underline"
+            disabled={isSubmitting}
+            onClick={() => {
+              setIsRecoveringPassword(false);
+              setStatus(null);
+            }}
+          >
+            Voltar para entrar
+          </button>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border border-border bg-background p-6 shadow-sm">
@@ -282,7 +375,10 @@ function LoginForm({
               type="button"
               className="text-sm hover:underline"
               disabled={isSubmitting}
-              onClick={() => setStatus("A recuperação de senha será ativada na próxima etapa.")}
+              onClick={() => {
+                setIsRecoveringPassword(true);
+                setStatus(null);
+              }}
             >
               Esqueceu sua senha?
             </button>

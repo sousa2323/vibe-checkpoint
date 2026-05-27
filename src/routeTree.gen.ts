@@ -13,6 +13,7 @@ import { Route as VenueOnboardingRouteImport } from './routes/venue-onboarding'
 import { Route as VenueDashboardRouteImport } from './routes/venue-dashboard'
 import { Route as UpdatesRouteImport } from './routes/updates'
 import { Route as ReviewsRouteImport } from './routes/reviews'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PostAuthRouteImport } from './routes/post-auth'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
@@ -44,6 +45,11 @@ const UpdatesRoute = UpdatesRouteImport.update({
 const ReviewsRoute = ReviewsRouteImport.update({
   id: '/reviews',
   path: '/reviews',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProfileRoute = ProfileRouteImport.update({
@@ -116,6 +122,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/post-auth': typeof PostAuthRoute
   '/profile': typeof ProfileRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/reviews': typeof ReviewsRoute
   '/updates': typeof UpdatesRoute
   '/venue-dashboard': typeof VenueDashboardRoute
@@ -134,6 +141,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/post-auth': typeof PostAuthRoute
   '/profile': typeof ProfileRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/reviews': typeof ReviewsRoute
   '/updates': typeof UpdatesRoute
   '/venue-dashboard': typeof VenueDashboardRoute
@@ -153,6 +161,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/post-auth': typeof PostAuthRoute
   '/profile': typeof ProfileRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/reviews': typeof ReviewsRoute
   '/updates': typeof UpdatesRoute
   '/venue-dashboard': typeof VenueDashboardRoute
@@ -173,6 +182,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/post-auth'
     | '/profile'
+    | '/reset-password'
     | '/reviews'
     | '/updates'
     | '/venue-dashboard'
@@ -191,6 +201,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/post-auth'
     | '/profile'
+    | '/reset-password'
     | '/reviews'
     | '/updates'
     | '/venue-dashboard'
@@ -209,6 +220,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/post-auth'
     | '/profile'
+    | '/reset-password'
     | '/reviews'
     | '/updates'
     | '/venue-dashboard'
@@ -228,6 +240,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   PostAuthRoute: typeof PostAuthRoute
   ProfileRoute: typeof ProfileRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   ReviewsRoute: typeof ReviewsRoute
   UpdatesRoute: typeof UpdatesRoute
   VenueDashboardRoute: typeof VenueDashboardRoute
@@ -266,6 +279,13 @@ declare module '@tanstack/react-router' {
       path: '/reviews'
       fullPath: '/reviews'
       preLoaderRoute: typeof ReviewsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/profile': {
@@ -364,6 +384,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   PostAuthRoute: PostAuthRoute,
   ProfileRoute: ProfileRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   ReviewsRoute: ReviewsRoute,
   UpdatesRoute: UpdatesRoute,
   VenueDashboardRoute: VenueDashboardRoute,
