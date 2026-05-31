@@ -7,7 +7,6 @@ import {
   LoaderCircle,
   LogOut,
   Moon,
-  Settings,
   Star,
   Store,
   Sun,
@@ -17,6 +16,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { authClient, getAuthUserName } from "@/auth";
 import { FeedActionNav } from "@/components/feed-action-nav";
+import { OwnerNav } from "@/components/owner-nav";
 import { PillButton } from "@/components/pill-button";
 import { UserAvatar } from "@/components/user-avatar";
 import { getInitials } from "@/lib/avatar";
@@ -260,7 +260,7 @@ function Profile() {
 
   return (
     <main className="app-shell bg-background pb-32">
-      <header className="flex items-start justify-between gap-4 px-6 pt-8">
+      <header className="px-6 pt-8">
         <div>
           <p className="text-xs font-semibold text-muted-foreground">
             {isOwner ? "Estabelecimento" : "Perfil"}
@@ -269,14 +269,6 @@ function Profile() {
             {isOwner ? "Seu painel" : "Sua conta"}
           </h1>
         </div>
-        <button
-          type="button"
-          aria-label="Configurações"
-          onClick={() => (isOwner ? navigate({ to: "/venue-onboarding" }) : openProfileEditor())}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-muted transition-colors hover:bg-muted/80"
-        >
-          <Settings className="h-5 w-5" />
-        </button>
       </header>
 
       <div className="mt-5 space-y-7 px-6">
@@ -425,7 +417,11 @@ function Profile() {
         </div>
       </div>
 
-      {isOwner ? null : <FeedActionNav />}
+      {isOwner ? (
+        <OwnerNav onCreate={() => navigate({ to: "/venue-dashboard" })} />
+      ) : (
+        <FeedActionNav />
+      )}
     </main>
   );
 }
