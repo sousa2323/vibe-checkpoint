@@ -260,30 +260,37 @@ function Profile() {
 
   return (
     <main className="app-shell bg-background pb-32">
-      <header className="flex items-center justify-between px-6 pt-8">
-        <h1 className="text-2xl font-bold tracking-tight">Perfil</h1>
+      <header className="flex items-start justify-between gap-4 px-6 pt-8">
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground">
+            {isOwner ? "Estabelecimento" : "Perfil"}
+          </p>
+          <h1 className="mt-1 text-2xl font-black tracking-tight">
+            {isOwner ? "Seu painel" : "Sua conta"}
+          </h1>
+        </div>
         <button
           type="button"
-          aria-label="Configuracoes"
+          aria-label="Configurações"
           onClick={() => (isOwner ? navigate({ to: "/venue-onboarding" }) : openProfileEditor())}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-muted"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-muted transition-colors hover:bg-muted/80"
         >
           <Settings className="h-5 w-5" />
         </button>
       </header>
 
-      <div className="mt-6 flex flex-col items-center px-6">
-        <ProfileAvatar name={displayName} image={displayImage} />
-        <h2 className="mt-3 text-xl font-bold">{displayName}</h2>
-        <p className="text-sm text-muted-foreground">
-          {user?.email ?? "Entre para salvar eventos"}
-        </p>
-        <span className="mt-3 rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">
-          {isOwner ? "Estabelecimento" : "Explorador"}
-        </span>
+      <div className="mt-5 space-y-7 px-6">
+        <ProfileHero
+          isOwner={isOwner}
+          name={displayName}
+          image={displayImage}
+          email={user?.email}
+          venue={venue}
+          onPrimary={() => navigate({ to: isOwner ? "/venue-dashboard" : "/discover" })}
+        />
 
         {!isOwner && isEditing ? (
-          <section className="mt-6 w-full rounded-3xl border border-border bg-muted/40 p-4">
+          <section className="rounded-3xl border border-border bg-muted/40 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-base font-black">Editar perfil</h3>
@@ -355,25 +362,14 @@ function Profile() {
           </section>
         ) : null}
 
-        <div className="mt-6 grid w-full grid-cols-3 gap-2 rounded-3xl bg-muted p-4 text-center">
-          {isOwner ? (
-            <>
-              <Stat label="Salvos" value={String(dashboard?.metrics.savedEvents ?? 0)} />
-              <Stat label="Eventos" value={String(dashboard?.metrics.events ?? 0)} />
-              <Stat label="Check-ins" value={String(dashboard?.metrics.checkins ?? 0)} />
-            </>
-          ) : (
-            <>
-              <Stat label="Check-ins" value={String(activityStats.checkins)} />
-              <Stat label="Avaliações" value={String(activityStats.reviews)} />
-              <Stat label="Salvos" value={String(activityStats.saved)} />
-            </>
-          )}
-        </div>
+        <ProfileStats isOwner={isOwner} dashboard={dashboard} activityStats={activityStats} />
 
-        <div className="mt-6 w-full space-y-2">
+        {isOwner ? <OwnerSummary dashboard={dashboard} /> : null}
+
+        <div className="space-y-3">
           {isOwner ? (
             <>
+              <SectionLabel title="Gestão do local" />
               <Row
                 icon={<Store className="h-4 w-4" />}
                 label={venue?.name ?? profile?.venueName ?? "Painel do estabelecimento"}
@@ -395,6 +391,7 @@ function Profile() {
             </>
           ) : (
             <>
+              <SectionLabel title="Atividade do explorador" />
               <Row
                 icon={<UserRound className="h-4 w-4" />}
                 label="Editar perfil"
@@ -409,6 +406,10 @@ function Profile() {
               />
             </>
           )}
+        </div>
+
+        <div className="space-y-3">
+          <SectionLabel title="Preferências" />
           <Row
             icon={isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             label={isDark ? "Modo claro" : "Modo escuro"}
@@ -422,20 +423,136 @@ function Profile() {
             onClick={() => void signOut()}
           />
         </div>
-
-        <PillButton
-          variant="primary"
-          size="lg"
-          className="mt-8 w-full"
-          onClick={() => navigate({ to: isOwner ? "/venue-dashboard" : "/discover" })}
-        >
-          {isOwner ? "Abrir painel" : "Voltar para Explorar"}
-        </PillButton>
       </div>
 
       {isOwner ? null : <FeedActionNav />}
     </main>
   );
+}
+
+function ProfileHero({
+  isOwner,
+  name,
+  image,
+  email,
+  venue,
+  onPrimary,
+}: {
+  isOwner: boolean;
+  name: string;
+  image?: string;
+  email?: string;
+  venue?: OwnerDashboard["venue"];
+  onPrimary: () => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-[1.75rem] bg-ink text-white shadow-[0_18px_40px_-22px_rgba(15,23,42,0.9)]">
+      <div className="relative min-h-[220px] p-5">
+        {image ? (
+          <img
+            src={image}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover opacity-35"
+          />
+        ) : null}
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/30" />
+
+        <div className="relative flex min-h-[180px] flex-col justify-end">
+          <div className="flex items-end justify-between gap-4">
+            <div className="min-w-0">
+              <span className="rounded-full bg-white/12 px-3 py-1 text-xs font-black text-white/80">
+                {isOwner ? "Conta de estabelecimento" : "Conta de explorador"}
+              </span>
+              <h2 className="mt-4 line-clamp-2 text-2xl font-black leading-tight tracking-tight">
+                {name}
+              </h2>
+              <p className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-white/70">
+                {isOwner ? (
+                  <Store className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <UserRound className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <span className="truncate">
+                  {isOwner
+                    ? (venue?.neighborhood ?? venue?.city ?? "Gerencie sua presença no app")
+                    : (email ?? "Salve eventos e registre seus rolês")}
+                </span>
+              </p>
+            </div>
+
+            <ProfileAvatar name={name} image={image} />
+          </div>
+
+          <button
+            type="button"
+            onClick={onPrimary}
+            className="mt-5 h-12 rounded-full bg-primary px-5 text-sm font-black text-white shadow-[0_18px_40px_rgba(241,58,90,0.28)] transition-transform active:scale-[0.98]"
+          >
+            {isOwner ? "Abrir painel" : "Voltar para Explorar"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ProfileStats({
+  isOwner,
+  dashboard,
+  activityStats,
+}: {
+  isOwner: boolean;
+  dashboard: OwnerDashboard | null;
+  activityStats: UserActivityStats;
+}) {
+  const stats = isOwner
+    ? [
+        { label: "Salvos", value: dashboard?.metrics.savedEvents ?? 0 },
+        { label: "Eventos", value: dashboard?.metrics.events ?? 0 },
+        { label: "Check-ins", value: dashboard?.metrics.checkins ?? 0 },
+      ]
+    : [
+        { label: "Check-ins", value: activityStats.checkins },
+        { label: "Avaliações", value: activityStats.reviews },
+        { label: "Salvos", value: activityStats.saved },
+      ];
+
+  return (
+    <section className="grid grid-cols-3 gap-2">
+      {stats.map((stat) => (
+        <Stat key={stat.label} label={stat.label} value={String(stat.value)} />
+      ))}
+    </section>
+  );
+}
+
+function OwnerSummary({ dashboard }: { dashboard: OwnerDashboard | null }) {
+  return (
+    <section className="grid grid-cols-2 gap-2">
+      <div className="rounded-3xl bg-muted p-4">
+        <p className="text-xs font-bold text-muted-foreground">Seguidores</p>
+        <p className="mt-2 text-2xl font-black tracking-tight">
+          {dashboard?.metrics.followers ?? 0}
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          Pessoas acompanhando o local.
+        </p>
+      </div>
+      <div className="rounded-3xl bg-muted p-4">
+        <p className="text-xs font-bold text-muted-foreground">Próximo evento</p>
+        <p className="mt-2 line-clamp-2 text-sm font-black leading-tight">
+          {dashboard?.nextEvent?.title ?? "Nenhum publicado"}
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          {dashboard?.nextEvent?.date ?? "Publique para aparecer no Explorar."}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function SectionLabel({ title }: { title: string }) {
+  return <h2 className="text-sm font-black tracking-tight">{title}</h2>;
 }
 
 function getUserImage(user: unknown) {
@@ -485,7 +602,7 @@ function ProfileAvatar({ name, image }: { name: string; image?: string }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="flex min-h-20 flex-col items-center justify-center rounded-3xl bg-muted px-3 py-4 text-center">
       <p className="text-xl font-bold">{value}</p>
       <p className="text-[11px] text-muted-foreground">{label}</p>
     </div>
