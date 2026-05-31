@@ -5,10 +5,12 @@ import { getRewardActionLabel, getRewardMeta } from "@/lib/growth";
 export function ShareInviteCard({
   event,
   reward,
+  disabled,
   onShare,
 }: {
   event: EventSummary;
   reward: string | null;
+  disabled?: boolean;
   onShare: () => void;
 }) {
   const rewardMeta = getRewardMeta(event);
@@ -48,7 +50,8 @@ export function ShareInviteCard({
         <button
           type="button"
           onClick={onShare}
-          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-primary text-sm font-black text-primary-foreground"
+          disabled={disabled}
+          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-primary text-sm font-black text-primary-foreground disabled:bg-white/15 disabled:text-white/55"
         >
           <Share2 className="h-4 w-4" />
           Compartilhar convite

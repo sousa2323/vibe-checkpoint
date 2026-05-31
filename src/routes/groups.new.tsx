@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/bottom-nav";
 import { NativeFeedback } from "@/components/native-feedback";
 import { PillButton } from "@/components/pill-button";
 import { createGroupPlan, getEvents, type EventSummary } from "@/lib/data";
+import { canEventAppearInGroupVoting } from "@/lib/event-time";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/groups/new")({
@@ -26,7 +27,10 @@ function NewGroupPlanPage() {
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const options = useMemo(() => events.slice(0, 20), [events]);
+  const options = useMemo(
+    () => events.filter((event) => canEventAppearInGroupVoting(event.startsAt)).slice(0, 20),
+    [events],
+  );
   const canSubmit = selectedIds.length >= 2 && selectedIds.length <= 4 && title.trim().length > 0;
 
   function toggleEvent(eventId: string) {
@@ -132,6 +136,11 @@ function NewGroupPlanPage() {
           </div>
 
           <div className="mt-3 space-y-3">
+            {options.length === 0 ? (
+              <div className="rounded-3xl border border-border p-5 text-sm font-semibold text-muted-foreground">
+                Nenhum evento disponível para votação agora.
+              </div>
+            ) : null}
             {options.map((event) => (
               <SelectableEvent
                 key={event.id}

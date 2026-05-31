@@ -19,6 +19,7 @@ export interface EventCardProps {
   image: string;
   price?: string;
   live?: boolean;
+  actionsDisabled?: boolean;
   saved?: boolean;
   checkedIn?: boolean;
   attendees?: UserAvatarSummary[];
@@ -32,6 +33,7 @@ export function EventCard(props: EventCardProps) {
   const going = props.going;
   const attendees = props.attendees?.slice(0, 3) ?? [];
   const socialProof = getSocialProof(props);
+  const actionsDisabled = Boolean(props.actionsDisabled);
 
   return (
     <div
@@ -86,9 +88,10 @@ export function EventCard(props: EventCardProps) {
           aria-label={props.saved ? "Remover dos salvos" : "Salvar"}
           onClick={(event) => {
             event.stopPropagation();
+            if (actionsDisabled) return;
             props.onToggleSave?.();
           }}
-          disabled={!props.onToggleSave}
+          disabled={!props.onToggleSave || actionsDisabled}
         >
           <Bookmark className="h-4 w-4" fill={props.saved ? "currentColor" : "none"} />
         </button>
@@ -138,13 +141,17 @@ export function EventCard(props: EventCardProps) {
             type="button"
             onClick={(event) => {
               event.stopPropagation();
+              if (actionsDisabled) return;
               props.onCheckin?.();
             }}
             aria-label={props.checkedIn ? "Desfazer check-in" : "Fazer check-in"}
+            disabled={actionsDisabled}
             className={
-              props.checkedIn
-                ? "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-[0_8px_18px_-10px_rgba(16,185,129,0.9)]"
-                : "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-white"
+              actionsDisabled
+                ? "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                : props.checkedIn
+                  ? "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-[0_8px_18px_-10px_rgba(16,185,129,0.9)]"
+                  : "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-white"
             }
           >
             {props.checkedIn ? (

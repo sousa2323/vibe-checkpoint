@@ -24,6 +24,7 @@ import {
   togglePostLike,
   toggleSavedEvent,
 } from "@/lib/data";
+import { canEventAcceptExplorerActions } from "@/lib/event-time";
 import {
   canRestoreLocation,
   type Coordinates,
@@ -296,6 +297,12 @@ function Discover() {
   }
 
   async function onToggleSave(eventId: string) {
+    const event = events.find((item) => item.id === eventId);
+    if (event && !canEventAcceptExplorerActions(event.startsAt)) {
+      setStatus("Esse evento já encerrou. Agora só a avaliação fica disponível.");
+      return;
+    }
+
     const userId = await requireUser();
     if (!userId) return;
 
@@ -310,6 +317,12 @@ function Discover() {
   }
 
   async function onCheckin(eventId: string, venueId: string) {
+    const event = events.find((item) => item.id === eventId);
+    if (event && !canEventAcceptExplorerActions(event.startsAt)) {
+      setStatus("Check-in encerrado para esse evento.");
+      return;
+    }
+
     const userId = await requireUser();
     if (!userId) return;
 
@@ -464,6 +477,7 @@ function Discover() {
                   venue={eventVenueLabel(feedItem.item)}
                   saved={savedIds.has(feedItem.item.id)}
                   checkedIn={checkedInIds.has(feedItem.item.id)}
+                  actionsDisabled={!canEventAcceptExplorerActions(feedItem.item.startsAt)}
                   onOpenDetails={() =>
                     navigate({ to: "/events/$eventId", params: { eventId: feedItem.item.id } })
                   }

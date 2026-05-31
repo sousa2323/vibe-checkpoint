@@ -16,6 +16,7 @@ import {
   toggleSavedEvent,
   type VenueDetail,
 } from "@/lib/data";
+import { canEventAcceptExplorerActions } from "@/lib/event-time";
 import {
   buildVenueShareText,
   getCheckinReward,
@@ -91,6 +92,12 @@ function VenueDetailPage() {
   }
 
   async function onToggleSave(eventId: string) {
+    const event = detail?.events.find((item) => item.id === eventId);
+    if (event && !canEventAcceptExplorerActions(event.startsAt)) {
+      setStatus("Esse evento já encerrou. Agora só a avaliação fica disponível.");
+      return;
+    }
+
     const userId = await requireUser();
     if (!userId || !detail) return;
 
@@ -105,6 +112,12 @@ function VenueDetailPage() {
   }
 
   async function onCheckin(eventId?: string) {
+    const event = eventId ? detail?.events.find((item) => item.id === eventId) : null;
+    if (event && !canEventAcceptExplorerActions(event.startsAt)) {
+      setStatus("Check-in encerrado para esse evento.");
+      return;
+    }
+
     const userId = await requireUser();
     if (!userId || !detail) return;
 
@@ -293,6 +306,7 @@ function VenueDetailPage() {
               <EventCard
                 key={event.id}
                 {...event}
+                actionsDisabled={!canEventAcceptExplorerActions(event.startsAt)}
                 onOpenDetails={() =>
                   navigate({ to: "/events/$eventId", params: { eventId: event.id } })
                 }

@@ -27,6 +27,7 @@ import {
   type EventReviewSummary,
   type EventSummary,
 } from "@/lib/data";
+import { canEventAcceptExplorerActions } from "@/lib/event-time";
 import {
   buildEventShareText,
   getCheckinReward,
@@ -101,6 +102,10 @@ function EventDetailPage() {
 
   async function onToggleSave() {
     if (!event) return;
+    if (!canEventAcceptExplorerActions(event.startsAt)) {
+      setStatus("Esse evento já encerrou. Agora só a avaliação fica disponível.");
+      return;
+    }
     const userId = await requireUser();
     if (!userId) return;
 
@@ -111,6 +116,10 @@ function EventDetailPage() {
 
   async function onCheckin() {
     if (!event) return;
+    if (!canEventAcceptExplorerActions(event.startsAt)) {
+      setStatus("Check-in encerrado para esse evento.");
+      return;
+    }
     const userId = await requireUser();
     if (!userId) return;
 
@@ -140,6 +149,10 @@ function EventDetailPage() {
 
   async function shareEvent() {
     if (!event || typeof window === "undefined") return;
+    if (!canEventAcceptExplorerActions(event.startsAt)) {
+      setStatus("O envio de convite foi encerrado para esse evento.");
+      return;
+    }
     const url = window.location.href;
 
     if (navigator.share) {
@@ -205,6 +218,7 @@ function EventDetailPage() {
 
   const checkedIn = Boolean(event.checkedIn);
   const reviewAvailable = isEventReviewAvailable(event.startsAt);
+  const actionsAvailable = canEventAcceptExplorerActions(event.startsAt);
   const reward = getCheckinReward(event);
   const rewardDescription = getRewardDescription(event);
   const rewardMeta = getRewardMeta(event);
@@ -260,7 +274,8 @@ function EventDetailPage() {
           <button
             type="button"
             onClick={() => void onToggleSave()}
-            className="flex h-12 items-center justify-center gap-2 rounded-full bg-muted text-sm font-bold"
+            disabled={!actionsAvailable}
+            className="flex h-12 items-center justify-center gap-2 rounded-full bg-muted text-sm font-bold disabled:text-muted-foreground disabled:opacity-60"
           >
             <Bookmark className="h-4 w-4" fill={saved ? "currentColor" : "none"} />
             {saved ? "Salvo" : "Salvar"}
@@ -268,7 +283,8 @@ function EventDetailPage() {
           <button
             type="button"
             onClick={() => void shareEvent()}
-            className="flex h-12 items-center justify-center gap-2 rounded-full bg-muted text-sm font-bold"
+            disabled={!actionsAvailable}
+            className="flex h-12 items-center justify-center gap-2 rounded-full bg-muted text-sm font-bold disabled:text-muted-foreground disabled:opacity-60"
           >
             <Share2 className="h-4 w-4" />
             Enviar
@@ -276,18 +292,29 @@ function EventDetailPage() {
           <button
             type="button"
             onClick={() => void onCheckin()}
+            disabled={!actionsAvailable}
             className={
-              checkedIn
-                ? "flex h-12 items-center justify-center gap-2 rounded-full bg-emerald-500 text-sm font-bold text-white shadow-[0_10px_24px_-14px_rgba(16,185,129,0.95)] ring-2 ring-emerald-500/20"
-                : "flex h-12 items-center justify-center gap-2 rounded-full bg-primary text-sm font-bold text-white"
+              !actionsAvailable
+                ? "flex h-12 items-center justify-center gap-2 rounded-full bg-muted text-sm font-bold text-muted-foreground"
+                : checkedIn
+                  ? "flex h-12 items-center justify-center gap-2 rounded-full bg-emerald-500 text-sm font-bold text-white shadow-[0_10px_24px_-14px_rgba(16,185,129,0.95)] ring-2 ring-emerald-500/20"
+                  : "flex h-12 items-center justify-center gap-2 rounded-full bg-primary text-sm font-bold text-white"
             }
           >
             {checkedIn ? <BadgeCheck className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-            {checkedIn ? "Confirmado" : "Check-in"}
+            {!actionsAvailable ? "Encerrado" : checkedIn ? "Confirmado" : "Check-in"}
           </button>
         </div>
 
-        <ShareInviteCard event={event} reward={reward} onShare={() => void shareEvent()} />
+        {!actionsAvailable ? (
+          <p className="mt-5 rounded-3xl bg-muted p-4 text-sm font-semibold text-muted-foreground">
+            Esse evento já encerrou. Você ainda pode avaliar se fez check-in e ainda não avaliou.
+          </p>
+        ) : null}
+
+        {actionsAvailable ? (
+          <ShareInviteCard event={event} reward={reward} onShare={() => void shareEvent()} />
+        ) : null}
 
         <ReviewPanel
           checkedIn={checkedIn}
@@ -297,7 +324,6 @@ function EventDetailPage() {
           reviewAvailable={reviewAvailable}
           saving={reviewSaving}
           onChange={setReviewDraft}
-          onEdit={() => setEditingReview(true)}
           onSubmit={submitReview}
         />
       </section>
@@ -352,7 +378,6 @@ function ReviewPanel({
   reviewAvailable,
   saving,
   onChange,
-  onEdit,
   onSubmit,
 }: {
   checkedIn: boolean;
@@ -362,7 +387,6 @@ function ReviewPanel({
   reviewAvailable: boolean;
   saving: boolean;
   onChange: (draft: ReviewDraft) => void;
-  onEdit: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const readyToSubmit = checkedIn && reviewAvailable && isReviewDraftComplete(draft) && !saving;
@@ -390,9 +414,6 @@ function ReviewPanel({
             {review.comment}
           </p>
         ) : null}
-        <button type="button" onClick={onEdit} className="mt-4 text-sm font-black text-primary">
-          Editar avaliação
-        </button>
       </section>
     );
   }

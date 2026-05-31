@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql, type SqlClient, uniqueSlug } from "./db";
+import { EVENT_ACTIVE_WINDOW_HOURS } from "./event-time";
 import { getOptionalAuthenticatedUserId, requireAuthenticatedUserId } from "./server-auth";
 import { fetchWithTimeout, timeoutMessage } from "./timeout";
 
@@ -334,6 +335,8 @@ const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
 });
+
+const eventActiveWindowInterval = `${EVENT_ACTIVE_WINDOW_HOURS} hours`;
 
 function formatEventDate(value: string | Date) {
   const date = new Date(value);
@@ -1033,16 +1036,18 @@ export const upsertEventReview = createServerFn({ method: "POST" })
       throw new Error("A avaliação será liberada depois que o evento terminar.");
     }
 
+    const existingReviews = await sql`
+      SELECT 1
+      FROM public.event_reviews
+      WHERE user_id = ${userId}
+        AND event_id = ${data.eventId}
+      LIMIT 1
+    `;
+    if (existingReviews.length > 0) throw new Error("Você já avaliou esse evento.");
+
     const rows = await sql`
       INSERT INTO public.event_reviews (event_id, user_id, atmosphere, music, price, movement, comment)
       VALUES (${data.eventId}, ${userId}, ${atmosphere}, ${music}, ${price}, ${movement}, ${comment})
-      ON CONFLICT (event_id, user_id) DO UPDATE SET
-        atmosphere = EXCLUDED.atmosphere,
-        music = EXCLUDED.music,
-        price = EXCLUDED.price,
-        movement = EXCLUDED.movement,
-        comment = EXCLUDED.comment,
-        updated_at = now()
       RETURNING id, event_id, user_id, atmosphere, music, price, movement, comment, created_at, updated_at
     `;
 
@@ -1084,10 +1089,14 @@ export const createGroupPlan = createServerFn({ method: "POST" })
       JOIN public.venues v ON v.id = e.venue_id
       WHERE e.id = ANY(${eventIds})
         AND e.status = 'published'
+        AND e.starts_at >= date_trunc('day', now())
+        AND e.starts_at > now() - ${eventActiveWindowInterval}::interval
       ORDER BY e.starts_at ASC
     `;
 
-    if (eventRows.length < 2) throw new Error("Escolha eventos publicados para montar o rolê.");
+    if (eventRows.length < 2) {
+      throw new Error("Escolha eventos que ainda vão acontecer ou estão rolando hoje.");
+    }
 
     const groupRows = await sql`
       INSERT INTO public.group_plans (creator_user_id, title, description)
@@ -1739,6 +1748,18 @@ export const toggleSavedEvent = createServerFn({ method: "POST" })
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
 
+    const eventRows = await sql`
+      SELECT starts_at > now() - ${eventActiveWindowInterval}::interval AS actions_available
+      FROM public.events
+      WHERE id = ${data.eventId}
+        AND status = 'published'
+      LIMIT 1
+    `;
+    if (eventRows.length === 0) throw new Error("Evento não encontrado.");
+    if (!eventRows[0]?.actions_available) {
+      throw new Error("Esse evento já encerrou. Agora só a avaliação fica disponível.");
+    }
+
     const existing = await sql`
       SELECT 1
       FROM public.saved_events
@@ -1841,6 +1862,19 @@ export const toggleCheckin = createServerFn({ method: "POST" })
 
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
+
+    if (data.eventId) {
+      const eventRows = await sql`
+        SELECT starts_at > now() - ${eventActiveWindowInterval}::interval AS actions_available
+        FROM public.events
+        WHERE id = ${data.eventId}
+          AND venue_id = ${data.venueId}
+          AND status = 'published'
+        LIMIT 1
+      `;
+      if (eventRows.length === 0) throw new Error("Evento não encontrado.");
+      if (!eventRows[0]?.actions_available) throw new Error("Check-in encerrado para esse evento.");
+    }
 
     const existing = data.eventId
       ? await sql`
