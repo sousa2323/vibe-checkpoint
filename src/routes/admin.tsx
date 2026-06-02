@@ -246,40 +246,51 @@ function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
-        <header className="flex flex-col gap-4 rounded-[2rem] bg-ink p-5 text-white shadow-[0_20px_60px_-36px_rgba(5,5,5,0.8)] sm:flex-row sm:items-end sm:justify-between sm:p-7">
-          <div>
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-black text-white/75">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Admin ChegaAí
-            </span>
-            <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight tracking-tight sm:text-4xl">
-              Operação, privacidade e moderação em um só painel.
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm font-semibold leading-relaxed text-white/65">
-              Busque usuários, veja dados administrativos e acompanhe auditoria sem acessar o banco
-              manualmente.
-            </p>
-          </div>
-          <div className="rounded-2xl bg-white/10 p-4 text-sm font-bold text-white/80 sm:min-w-52">
-            <p className="truncate text-white">
-              {dashboard.admin.displayName ?? dashboard.admin.email ?? "Admin"}
-            </p>
-            <p className="mt-1 truncate text-xs text-white/55">{dashboard.admin.role}</p>
+    <main className="min-h-screen bg-muted/35 text-foreground">
+      <div className="mx-auto w-full max-w-[1440px] px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
+        <header className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-start gap-4">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-ink text-white">
+                <ShieldCheck className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-black text-primary">Admin ChegaAí</p>
+                <h1 className="mt-1 text-2xl font-black leading-tight tracking-tight sm:text-3xl">
+                  Operação, privacidade e auditoria
+                </h1>
+                <p className="mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-muted-foreground">
+                  Busque usuários, revise pedidos LGPD e acompanhe ações administrativas sem acessar
+                  o banco manualmente.
+                </p>
+              </div>
+            </div>
+            <div className="flex min-w-0 items-center gap-3 rounded-2xl bg-muted px-4 py-3 lg:min-w-72">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-card text-foreground">
+                <UserRound className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black">
+                  {dashboard.admin.displayName ?? dashboard.admin.email ?? "Admin"}
+                </p>
+                <p className="mt-0.5 truncate text-xs font-bold text-muted-foreground">
+                  {dashboard.admin.role}
+                </p>
+              </div>
+            </div>
           </div>
         </header>
 
-        <nav className="mt-5 flex gap-2 overflow-x-auto rounded-full bg-muted p-1">
+        <nav className="sticky top-3 z-20 mt-4 flex gap-1 overflow-x-auto rounded-2xl border border-border bg-card/95 p-1 shadow-sm backdrop-blur">
           {tabs.map((tab) => (
             <button
               key={tab.value}
               type="button"
               className={cn(
-                "h-10 shrink-0 rounded-full px-4 text-sm font-black transition",
+                "h-10 shrink-0 rounded-xl px-4 text-sm font-black transition",
                 activeTab === tab.value
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground",
+                  ? "bg-ink text-white shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
               onClick={() => setActiveTab(tab.value)}
             >
@@ -333,61 +344,68 @@ function OverviewTab({
   onOpenUser: (userId: string) => void;
 }) {
   return (
-    <>
-      <section className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard icon={<UsersRound />} label="Usuários" value={dashboard.metrics.users} />
-        <MetricCard icon={<Store />} label="Estabelecimentos" value={dashboard.metrics.venues} />
-        <MetricCard icon={<CalendarDays />} label="Eventos" value={dashboard.metrics.events} />
-        <MetricCard
-          icon={<ShieldCheck />}
-          label="LGPD pendentes"
-          value={dashboard.metrics.privacyPending}
-          signal
-        />
-      </section>
+    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <section className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
+          <MetricCard icon={<UsersRound />} label="Usuários" value={dashboard.metrics.users} />
+          <MetricCard icon={<Store />} label="Estabelecimentos" value={dashboard.metrics.venues} />
+          <MetricCard icon={<CalendarDays />} label="Eventos" value={dashboard.metrics.events} />
+          <MetricCard
+            icon={<ShieldCheck />}
+            label="LGPD pendentes"
+            value={dashboard.metrics.privacyPending}
+            signal
+          />
+        </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_360px]">
-        <section className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
-          <h2 className="text-xl font-black tracking-tight">Pedidos LGPD recentes</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Resumo dos pedidos que também aparecem na aba LGPD.
-          </p>
-          <div className="mt-5 space-y-3">
+        <div className="mt-8">
+          <SectionHeader
+            title="Pedidos LGPD recentes"
+            description="Resumo dos pedidos que também aparecem na aba LGPD."
+          />
+          <div className="mt-4 divide-y divide-border overflow-hidden rounded-3xl border border-border">
             {dashboard.privacyRequests.slice(0, 5).map((request) => (
-              <div key={request.id} className="rounded-3xl bg-muted p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatusBadge status={request.status} />
-                  <p className="text-sm font-black">{request.email ?? "Sem email"}</p>
+              <div
+                key={request.id}
+                className="flex flex-col gap-2 bg-background p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status={request.status} />
+                    <p className="truncate text-sm font-black">{request.email ?? "Sem email"}</p>
+                  </div>
+                  <p className="mt-1 text-xs font-semibold text-muted-foreground">
+                    {request.requestType}
+                  </p>
                 </div>
-                <p className="mt-2 text-xs font-semibold text-muted-foreground">
+                <p className="shrink-0 text-xs font-semibold text-muted-foreground">
                   {formatDate(request.createdAt)}
                 </p>
               </div>
             ))}
             {!dashboard.privacyRequests.length ? <EmptyBlock text="Nenhum pedido LGPD." /> : null}
           </div>
-        </section>
+        </div>
+      </section>
 
-        <aside className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
-          <h2 className="text-xl font-black tracking-tight">Últimos usuários</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Cadastros recentes de usuários.</p>
-          <div className="mt-5 space-y-3">
-            {dashboard.recentUsers.length ? (
-              dashboard.recentUsers.map((profile) => (
-                <UserCard
-                  key={profile.userId}
-                  profile={profile}
-                  compact
-                  onOpen={() => onOpenUser(profile.userId)}
-                />
-              ))
-            ) : (
-              <EmptyBlock text="Nenhum perfil encontrado." />
-            )}
-          </div>
-        </aside>
-      </div>
-    </>
+      <aside className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5 xl:sticky xl:top-24 xl:self-start">
+        <SectionHeader title="Últimos usuários" description="Cadastros recentes no app." />
+        <div className="mt-4 space-y-2">
+          {dashboard.recentUsers.length ? (
+            dashboard.recentUsers.map((profile) => (
+              <UserCard
+                key={profile.userId}
+                profile={profile}
+                compact
+                onOpen={() => onOpenUser(profile.userId)}
+              />
+            ))
+          ) : (
+            <EmptyBlock text="Nenhum perfil encontrado." />
+          )}
+        </div>
+      </aside>
+    </div>
   );
 }
 
@@ -413,18 +431,15 @@ function UsersTab({
   onCloseDetail: () => void;
 }) {
   return (
-    <div className="mt-5 grid gap-5 lg:grid-cols-[420px_1fr]">
-      <section className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-black tracking-tight">Usuários</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Busque por nome, email ou tipo.</p>
-          </div>
+    <div className="mt-5 grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)]">
+      <section className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5 lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-hidden">
+        <div className="flex items-start justify-between gap-3">
+          <SectionHeader title="Usuários" description="Busque por nome, email ou tipo." />
           {loading ? <LoaderCircle className="h-5 w-5 animate-spin text-primary" /> : null}
         </div>
 
         <form
-          className="mt-5 flex gap-2"
+          className="mt-4 flex gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             onSearch();
@@ -447,7 +462,7 @@ function UsersTab({
           </button>
         </form>
 
-        <div className="mt-5 space-y-3">
+        <div className="mt-4 space-y-2 lg:max-h-[calc(100dvh-15rem)] lg:overflow-y-auto lg:pr-1">
           {users.map((profile) => (
             <UserCard
               key={profile.userId}
@@ -460,7 +475,7 @@ function UsersTab({
         </div>
       </section>
 
-      <section className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
+      <section className="min-w-0 rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
         {detail ? <UserDetail detail={detail} onClose={onCloseDetail} /> : <UserDetailEmpty />}
       </section>
     </div>
@@ -481,7 +496,7 @@ function UserCard({
   return (
     <button
       type="button"
-      className="w-full rounded-3xl bg-muted p-4 text-left transition-transform active:scale-[0.99]"
+      className="w-full rounded-2xl bg-muted p-3 text-left transition hover:bg-surface active:scale-[0.99]"
       onClick={onOpen}
     >
       <div className="flex items-start justify-between gap-3">
@@ -499,7 +514,7 @@ function UserCard({
             </p>
           ) : null}
         </div>
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-card text-foreground">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-card text-foreground shadow-sm">
           {loading ? (
             <LoaderCircle className="h-4 w-4 animate-spin" />
           ) : (
@@ -515,7 +530,7 @@ function UserDetail({ detail, onClose }: { detail: AdminUserDetail; onClose: () 
   const profile = detail.profile;
   return (
     <div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-center gap-3">
           {profile.avatarUrl ? (
             <img src={profile.avatarUrl} alt="" className="h-14 w-14 rounded-full object-cover" />
@@ -554,7 +569,7 @@ function UserDetail({ detail, onClose }: { detail: AdminUserDetail; onClose: () 
         <SmallCount label="LGPD" value={detail.counts.privacyRequests} />
       </div>
 
-      <div className="mt-5 grid gap-4 xl:grid-cols-2">
+      <div className="mt-6 grid gap-4 xl:grid-cols-2">
         <ItemSection title="Eventos salvos" items={detail.savedEvents} />
         <ItemSection title="Check-ins" items={detail.checkins} />
         <TextSection title="Avaliações" items={detail.reviews} />
@@ -565,7 +580,7 @@ function UserDetail({ detail, onClose }: { detail: AdminUserDetail; onClose: () 
         <ItemSection title="Eventos criados" items={detail.ownedEvents} />
       </div>
 
-      <div className="mt-5 rounded-3xl bg-muted p-4">
+      <div className="mt-6 rounded-3xl border border-border bg-background p-4">
         <h3 className="text-sm font-black">Pedidos LGPD do usuário</h3>
         <div className="mt-3 space-y-2">
           {detail.privacyRequests.map((request) => (
@@ -616,13 +631,11 @@ function PrivacyTab({
 }) {
   return (
     <section className="mt-5 rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-xl font-black tracking-tight">Pedidos LGPD</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Revise pedidos de exclusão antes de anonimizar ou remover dados.
-          </p>
-        </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <SectionHeader
+          title="Pedidos LGPD"
+          description="Revise pedidos de exclusão antes de anonimizar ou remover dados."
+        />
         <button
           type="button"
           className="h-10 rounded-full bg-muted px-4 text-sm font-black text-foreground"
@@ -633,7 +646,7 @@ function PrivacyTab({
       </div>
 
       {requests.length ? (
-        <div className="mt-5 space-y-3 lg:space-y-0 lg:overflow-hidden lg:rounded-3xl lg:border lg:border-border">
+        <div className="mt-4 space-y-3 lg:space-y-0 lg:overflow-hidden lg:rounded-3xl lg:border lg:border-border">
           <div className="hidden grid-cols-[1fr_150px_170px_190px] gap-3 bg-muted px-4 py-3 text-xs font-black text-muted-foreground lg:grid">
             <span>Pedido</span>
             <span>Status</span>
@@ -661,13 +674,11 @@ function PrivacyTab({
 function AuditTab({ logs, onRefresh }: { logs: AdminAuditLogSummary[]; onRefresh: () => void }) {
   return (
     <section className="mt-5 rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-xl font-black tracking-tight">Auditoria admin</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Registro das ações feitas por administradores.
-          </p>
-        </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <SectionHeader
+          title="Auditoria admin"
+          description="Registro das ações feitas por administradores."
+        />
         <button
           type="button"
           className="h-10 rounded-full bg-muted px-4 text-sm font-black text-foreground"
@@ -677,13 +688,13 @@ function AuditTab({ logs, onRefresh }: { logs: AdminAuditLogSummary[]; onRefresh
         </button>
       </div>
 
-      <div className="mt-5 space-y-3">
+      <div className="mt-4 divide-y divide-border overflow-hidden rounded-3xl border border-border">
         {logs.map((log) => (
-          <div key={log.id} className="rounded-3xl bg-muted p-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div key={log.id} className="bg-background p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-card">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
                     <History className="h-4 w-4" />
                   </span>
                   <p className="text-sm font-black">{translateAuditAction(log.action)}</p>
@@ -716,17 +727,30 @@ function MetricCard({
   signal?: boolean;
 }) {
   return (
-    <div className="rounded-[1.75rem] border border-border bg-card p-4 shadow-sm">
+    <div className="flex items-center gap-4 rounded-[1.5rem] bg-muted p-4">
       <div
         className={cn(
-          "flex h-11 w-11 items-center justify-center rounded-full [&_svg]:h-5 [&_svg]:w-5",
-          signal ? "bg-primary/10 text-primary" : "bg-muted text-foreground",
+          "flex h-11 w-11 shrink-0 items-center justify-center rounded-full [&_svg]:h-5 [&_svg]:w-5",
+          signal ? "bg-primary/10 text-primary" : "bg-card text-foreground",
         )}
       >
         {icon}
       </div>
-      <p className="mt-5 text-3xl font-black tracking-tight">{value}</p>
-      <p className="mt-1 text-sm font-bold text-muted-foreground">{label}</p>
+      <div>
+        <p className="text-2xl font-black tracking-tight">{value}</p>
+        <p className="text-sm font-bold text-muted-foreground">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({ title, description }: { title: string; description: string }) {
+  return (
+    <div>
+      <h2 className="text-xl font-black tracking-tight">{title}</h2>
+      <p className="mt-1 text-sm font-semibold leading-relaxed text-muted-foreground">
+        {description}
+      </p>
     </div>
   );
 }
@@ -799,11 +823,11 @@ function PrivacyRequestRow({
 
 function ItemSection({ title, items }: { title: string; items: AdminNamedItem[] }) {
   return (
-    <section className="rounded-3xl bg-muted p-4">
+    <section className="rounded-3xl border border-border bg-background p-4">
       <h3 className="text-sm font-black">{title}</h3>
       <div className="mt-3 space-y-2">
         {items.map((item) => (
-          <div key={item.id} className="rounded-2xl bg-card p-3">
+          <div key={item.id} className="rounded-2xl bg-muted p-3">
             <p className="truncate text-sm font-black">{item.label}</p>
             <p className="mt-1 text-xs font-semibold text-muted-foreground">
               {[item.helper, formatDate(item.createdAt)].filter(Boolean).join(" · ")}
@@ -818,11 +842,11 @@ function ItemSection({ title, items }: { title: string; items: AdminNamedItem[] 
 
 function TextSection({ title, items }: { title: string; items: AdminTextItem[] }) {
   return (
-    <section className="rounded-3xl bg-muted p-4">
+    <section className="rounded-3xl border border-border bg-background p-4">
       <h3 className="text-sm font-black">{title}</h3>
       <div className="mt-3 space-y-2">
         {items.map((item) => (
-          <div key={item.id} className="rounded-2xl bg-card p-3">
+          <div key={item.id} className="rounded-2xl bg-muted p-3">
             <p className="truncate text-sm font-black">{item.label}</p>
             {item.text ? (
               <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted-foreground">
@@ -842,7 +866,7 @@ function TextSection({ title, items }: { title: string; items: AdminTextItem[] }
 
 function SmallCount({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-3xl bg-muted p-4">
+    <div className="rounded-3xl border border-border bg-background p-4">
       <p className="text-2xl font-black tracking-tight">{value}</p>
       <p className="mt-1 text-xs font-bold text-muted-foreground">{label}</p>
     </div>
