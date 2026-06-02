@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { MapPin, Store } from "lucide-react";
 import { type KeyboardEvent, useEffect, useState } from "react";
 import { authClient } from "@/auth";
@@ -15,6 +15,7 @@ export const Route = createFileRoute("/auth")({
 type Tab = "login" | "signup";
 type AccountType = "explorer" | "owner";
 const publicAppOrigin = "https://vibe-checkpoint.vercel.app";
+const legalConsentVersion = "2026-06-02";
 
 function writeSignupIntent(accountType: AccountType) {
   try {
@@ -435,6 +436,7 @@ function SignupForm({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -443,6 +445,11 @@ function SignupForm({
     const trimmedName = name.trim();
     if (!trimmedEmail || !password) {
       setStatus("Informe email e senha para criar sua conta.");
+      return;
+    }
+
+    if (!acceptedLegal) {
+      setStatus("Leia e aceite os Termos de Uso e a Política de Privacidade para criar sua conta.");
       return;
     }
 
@@ -460,6 +467,10 @@ function SignupForm({
             name: trimmedName || undefined,
             account_type: accountType,
             accountType,
+            legal_consent_version: legalConsentVersion,
+            legal_consent_at: new Date().toISOString(),
+            terms_accepted: true,
+            privacy_accepted: true,
           },
           emailRedirectTo: getPostAuthRedirectUrl(accountType),
         },
@@ -540,6 +551,27 @@ function SignupForm({
           />
         </div>
 
+        <label className="flex items-start gap-3 rounded-2xl border border-border bg-muted/40 p-3 text-sm leading-relaxed">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 shrink-0 accent-primary"
+            checked={acceptedLegal}
+            disabled={isSubmitting}
+            onChange={(event) => setAcceptedLegal(event.currentTarget.checked)}
+          />
+          <span className="text-muted-foreground">
+            Li e aceito os{" "}
+            <Link to="/terms" className="font-bold text-foreground underline underline-offset-4">
+              Termos de Uso
+            </Link>{" "}
+            e a{" "}
+            <Link to="/privacy" className="font-bold text-foreground underline underline-offset-4">
+              Política de Privacidade
+            </Link>
+            .
+          </span>
+        </label>
+
         {status ? (
           <p className="rounded-xl bg-muted px-3 py-2 text-sm text-muted-foreground">{status}</p>
         ) : null}
@@ -547,7 +579,7 @@ function SignupForm({
         <Button
           type="button"
           className="h-10 rounded-xl bg-primary"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !acceptedLegal}
           onClick={() => void submit()}
         >
           {isSubmitting ? "Criando..." : "Criar conta"}

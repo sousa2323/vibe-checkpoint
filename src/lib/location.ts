@@ -145,6 +145,18 @@ export function saveLocationConsent() {
   }
 }
 
+export function clearSavedLocationPreferences() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(LOCATION_CONSENT_KEY);
+    window.localStorage.removeItem(LOCATION_CACHE_KEY);
+    window.localStorage.removeItem(RADIUS_PREFERENCE_KEY);
+  } catch {
+    // Ignore storage failures; device/browser permissions remain managed by the OS.
+  }
+}
+
 export function readSavedLocation() {
   if (typeof window === "undefined") return null;
 

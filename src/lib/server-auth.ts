@@ -25,8 +25,7 @@ function getCookieValue(cookieHeader: string, name: string) {
   return decodeURIComponent(cookie.slice(name.length + 1));
 }
 
-async function getAuthenticatedUserId(): Promise<AuthLookupResult> {
-  const headers = getRequestHeaders();
+async function getAuthenticatedUserIdFromHeaders(headers: Headers): Promise<AuthLookupResult> {
   const cookieHeader = headers.get("cookie");
   const cookieAccessToken = cookieHeader
     ? getCookieValue(cookieHeader, supabaseAccessTokenCookie)
@@ -51,10 +50,32 @@ async function getAuthenticatedUserId(): Promise<AuthLookupResult> {
   return { userId: null, hadSessionCookie: true };
 }
 
+async function getAuthenticatedUserId(): Promise<AuthLookupResult> {
+  return getAuthenticatedUserIdFromHeaders(getRequestHeaders());
+}
+
 export async function requireAuthenticatedUserId(expectedUserId?: string) {
   if (!expectedUserId) throw new Error("Usuário não autenticado.");
 
   const session = await getAuthenticatedUserId();
+  if (!session.userId) {
+    throw new Error("Usuário não autenticado.");
+  }
+  const sessionUserId = session.userId;
+  if (sessionUserId !== expectedUserId) {
+    throw new Error("Sessão não corresponde ao usuário informado.");
+  }
+
+  return sessionUserId;
+}
+
+export async function requireAuthenticatedUserIdFromHeaders(
+  headers: Headers,
+  expectedUserId?: string,
+) {
+  if (!expectedUserId) throw new Error("Usuário não autenticado.");
+
+  const session = await getAuthenticatedUserIdFromHeaders(headers);
   if (!session.userId) {
     throw new Error("Usuário não autenticado.");
   }

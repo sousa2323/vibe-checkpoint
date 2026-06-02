@@ -4,22 +4,38 @@ import {
   Building2,
   CalendarPlus,
   Camera,
+  Copy,
+  Download,
+  ExternalLink,
+  FileText,
   LoaderCircle,
   LogOut,
+  MapPinOff,
   Moon,
+  ShieldCheck,
   Star,
   Store,
   Sun,
+  Trash2,
   UserRound,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { authClient, getAuthUserName } from "@/auth";
 import { FeedActionNav } from "@/components/feed-action-nav";
 import { OwnerNav } from "@/components/owner-nav";
 import { PillButton } from "@/components/pill-button";
 import { UserAvatar } from "@/components/user-avatar";
 import { getInitials } from "@/lib/avatar";
+import { getAdminAccess } from "@/lib/admin-actions";
 import {
   getOwnerDashboard,
   getUserActivityStats,
@@ -27,6 +43,8 @@ import {
   type UserActivityStats,
 } from "@/lib/data";
 import { isAllowedImageMimeType, uploadMedia } from "@/lib/media";
+import { clearSavedLocationPreferences } from "@/lib/location";
+import { exportUserData, requestAccountDeletion } from "@/lib/privacy-actions";
 import {
   type AccountType,
   getUserProfile,
@@ -34,6 +52,7 @@ import {
   updateExplorerProfile,
 } from "@/lib/profile-actions";
 import { useAppTheme } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/profile")({
   component: Profile,
@@ -59,6 +78,9 @@ function Profile() {
   const loadDashboard = useServerFn(getOwnerDashboard);
   const loadActivityStats = useServerFn(getUserActivityStats);
   const upload = useServerFn(uploadMedia);
+  const exportData = useServerFn(exportUserData);
+  const requestDeletion = useServerFn(requestAccountDeletion);
+  const checkAdminAccess = useServerFn(getAdminAccess);
   const { isDark, toggleTheme } = useAppTheme();
   const metadataAccountType = getMetadataAccountType(user);
   const [accountType, setAccountType] = useState<AccountType>("explorer");
@@ -76,6 +98,17 @@ function Profile() {
   const [avatarPreview, setAvatarPreview] = useState<string | undefined>();
   const [editError, setEditError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving">("idle");
+  const [privacyAction, setPrivacyAction] = useState<"idle" | "exporting" | "requestingDeletion">(
+    "idle",
+  );
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportedJson, setExportedJson] = useState("");
+  const [exportError, setExportError] = useState("");
+  const [exportDownloadUrl, setExportDownloadUrl] = useState("");
+  const [exportViewUrl, setExportViewUrl] = useState("");
+  const [exportFileName, setExportFileName] = useState("");
+  const [deletionDialogOpen, setDeletionDialogOpen] = useState(false);
+  const [hasAdminAccess, setHasAdminAccess] = useState(false);
 
   useEffect(() => {
     if (isPending) return;
@@ -145,6 +178,23 @@ function Profile() {
     navigate,
     user?.id,
   ]);
+
+  useEffect(() => {
+    if (isPending || !user?.id) return;
+
+    let cancelled = false;
+    checkAdminAccess({ data: { userId: user.id } })
+      .then((result) => {
+        if (!cancelled) setHasAdminAccess(result.isAdmin);
+      })
+      .catch(() => {
+        if (!cancelled) setHasAdminAccess(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checkAdminAccess, isPending, user?.id]);
 
   const isOwner = accountType === "owner";
   const venue = dashboard?.venue;
@@ -232,6 +282,85 @@ function Profile() {
   async function signOut() {
     await authClient.signOut();
     navigate({ to: "/auth" });
+  }
+
+  function clearLocalLocation() {
+    clearSavedLocationPreferences();
+    toast.success("Localização salva removida deste dispositivo.");
+  }
+
+  async function downloadMyData() {
+    if (!user?.id || privacyAction !== "idle") return;
+
+    const nextFileName = `chegaai-meus-dados-${new Date().toISOString().slice(0, 10)}.json`;
+    setExportedJson("");
+    setExportError("");
+    setExportFileName(nextFileName);
+    setExportDownloadUrl(buildPrivacyExportUrl(user.id, user.email, displayName, accountType));
+    setExportViewUrl(buildPrivacyExportUrl(user.id, user.email, displayName, accountType, "view"));
+    setExportDialogOpen(true);
+    setPrivacyAction("exporting");
+
+    try {
+      const payload = await exportData({
+        data: {
+          userId: user.id,
+          email: user.email,
+          name: displayName,
+          accountType,
+        },
+      });
+      const json = JSON.stringify(payload, null, 2);
+      setExportedJson(json);
+      toast.success("Exportação pronta.");
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : "Não foi possível exportar os dados.";
+      setExportError(message);
+      toast.error(message);
+    } finally {
+      setPrivacyAction("idle");
+    }
+  }
+
+  async function copyExportJson() {
+    if (!exportedJson) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(exportedJson);
+      } else {
+        const input = document.createElement("textarea");
+        input.value = exportedJson;
+        input.setAttribute("readonly", "");
+        input.style.position = "fixed";
+        input.style.left = "-9999px";
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        input.remove();
+      }
+      toast.success("JSON copiado.");
+    } catch {
+      toast.error("Não foi possível copiar os dados.");
+    }
+  }
+
+  async function requestMyAccountDeletion() {
+    if (!user?.id || privacyAction !== "idle") return;
+
+    setPrivacyAction("requestingDeletion");
+    try {
+      const result = await requestDeletion({ data: { userId: user.id, email: user.email } });
+      setDeletionDialogOpen(false);
+      toast.success(`Solicitação registrada. Protocolo: ${result.id.slice(0, 8)}.`);
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : "Não foi possível registrar a solicitação.";
+      toast.error(message);
+    } finally {
+      setPrivacyAction("idle");
+    }
   }
 
   if (loadState === "loading") {
@@ -409,6 +538,71 @@ function Profile() {
             onClick={toggleTheme}
           />
           <Row
+            icon={<MapPinOff className="h-4 w-4" />}
+            label="Limpar localização salva"
+            helper="Remove consentimento, localização recente e raio deste dispositivo."
+            onClick={clearLocalLocation}
+          />
+        </div>
+
+        <section className="rounded-3xl border border-border bg-muted/40 p-4">
+          <SectionLabel title="Privacidade e LGPD" />
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Seu nome, foto, avaliações, posts, check-ins e dados de estabelecimento podem aparecer
+            publicamente quando você publicar ou interagir no app.
+          </p>
+          <div className="mt-4 space-y-3">
+            <Row
+              icon={<Download className="h-4 w-4" />}
+              label={privacyAction === "exporting" ? "Gerando exportação..." : "Baixar meus dados"}
+              helper="Gera um arquivo JSON com dados básicos da conta e atividades."
+              disabled={privacyAction !== "idle"}
+              onClick={() => void downloadMyData()}
+            />
+            <Row
+              icon={<FileText className="h-4 w-4" />}
+              label="Política de Privacidade"
+              helper="Veja como seus dados são tratados."
+              disabled={privacyAction !== "idle"}
+              onClick={() => navigate({ to: "/privacy" })}
+            />
+            <Row
+              icon={<FileText className="h-4 w-4" />}
+              label="Termos de Uso"
+              helper="Regras de uso do ChegaAí."
+              disabled={privacyAction !== "idle"}
+              onClick={() => navigate({ to: "/terms" })}
+            />
+            <Row
+              icon={<Trash2 className="h-4 w-4" />}
+              label={
+                privacyAction === "requestingDeletion"
+                  ? "Registrando solicitação..."
+                  : "Solicitar exclusão da conta"
+              }
+              helper="Abre um pedido LGPD para revisão e exclusão/anonimização dos dados."
+              disabled={privacyAction !== "idle"}
+              danger
+              onClick={() => setDeletionDialogOpen(true)}
+            />
+          </div>
+          <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+            A exclusão definitiva ainda passa por revisão para preservar dados exigidos por lei,
+            segurança e conteúdo público que precise ser anonimizado.
+          </p>
+        </section>
+
+        <div className="space-y-3">
+          <SectionLabel title="Conta" />
+          {hasAdminAccess ? (
+            <Row
+              icon={<ShieldCheck className="h-4 w-4" />}
+              label="Painel admin"
+              helper="Administrar app, pedidos LGPD e operação."
+              onClick={() => navigate({ to: "/admin" })}
+            />
+          ) : null}
+          <Row
             icon={<LogOut className="h-4 w-4" />}
             label="Sair"
             helper="Voltar para a tela de entrada."
@@ -422,6 +616,129 @@ function Profile() {
       ) : (
         <FeedActionNav />
       )}
+
+      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <DialogContent className="bottom-0 top-auto max-w-[420px] translate-y-0 gap-0 rounded-t-[2rem] border-0 p-0 shadow-[0_-18px_44px_rgba(5,5,5,0.18)] sm:top-[50%] sm:translate-y-[-50%] sm:rounded-[2rem]">
+          <div className="p-5 pb-3">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Download className="h-5 w-5" />
+            </span>
+            <DialogHeader className="mt-4 space-y-2 text-left">
+              <DialogTitle className="text-xl font-black tracking-tight">
+                {privacyAction === "exporting"
+                  ? "Gerando seus dados"
+                  : exportError
+                    ? "Não foi possível gerar a prévia"
+                    : "Seus dados estão prontos"}
+              </DialogTitle>
+              <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                Escolha como acessar o arquivo JSON. Em alguns navegadores móveis, o download só
+                funciona quando você toca diretamente no botão abaixo.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="border-y border-border bg-muted/50 px-5 py-4">
+            <p className="truncate text-sm font-black">{exportFileName || "meus-dados.json"}</p>
+            {privacyAction === "exporting" ? (
+              <p className="mt-1 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" />
+                Gerando seus dados...
+              </p>
+            ) : exportError ? (
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-primary">
+                {exportError}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Se o download não abrir, use “Abrir JSON” ou “Copiar JSON”.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2 p-5">
+            {exportDownloadUrl ? (
+              <a
+                href={exportDownloadUrl}
+                download={exportFileName || "chegaai-meus-dados.json"}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-sm font-black text-white shadow-[0_18px_40px_rgba(241,58,90,0.28)] transition-transform active:scale-[0.98]"
+              >
+                <Download className="h-4 w-4" />
+                Baixar arquivo JSON
+              </a>
+            ) : null}
+            <div className="grid grid-cols-2 gap-2">
+              {exportViewUrl ? (
+                <a
+                  href={exportViewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex h-11 items-center justify-center gap-2 rounded-full bg-muted px-3 text-sm font-black text-foreground transition-opacity active:opacity-80"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Abrir JSON
+                </a>
+              ) : null}
+              <button
+                type="button"
+                className="flex h-11 items-center justify-center gap-2 rounded-full bg-muted px-3 text-sm font-black text-foreground transition-opacity active:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!exportedJson || privacyAction === "exporting"}
+                onClick={() => void copyExportJson()}
+              >
+                <Copy className="h-4 w-4" />
+                Copiar JSON
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deletionDialogOpen} onOpenChange={setDeletionDialogOpen}>
+        <DialogContent className="bottom-0 top-auto max-w-[420px] translate-y-0 gap-0 rounded-t-[2rem] border-0 p-0 shadow-[0_-18px_44px_rgba(5,5,5,0.18)] sm:top-[50%] sm:translate-y-[-50%] sm:rounded-[2rem]">
+          <div className="p-5 pb-3">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Trash2 className="h-5 w-5" />
+            </span>
+            <DialogHeader className="mt-4 space-y-2 text-left">
+              <DialogTitle className="text-xl font-black tracking-tight">
+                Solicitar exclusão da conta?
+              </DialogTitle>
+              <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                Isso registra um pedido LGPD para a equipe revisar seus dados antes da exclusão
+                definitiva. A conta não é apagada automaticamente nesta etapa.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="border-y border-border bg-muted/50 px-5 py-4">
+            <p className="text-sm font-black">O que acontece agora</p>
+            <ul className="mt-3 space-y-2 text-sm leading-relaxed text-muted-foreground">
+              <li>Seu pedido fica registrado com status pendente.</li>
+              <li>Dados públicos, eventos e estabelecimento podem precisar de anonimização.</li>
+              <li>Obrigações legais e de segurança podem limitar a remoção imediata.</li>
+            </ul>
+          </div>
+
+          <DialogFooter className="grid grid-cols-2 gap-2 space-x-0 p-5 sm:space-x-0">
+            <button
+              type="button"
+              className="h-12 rounded-full bg-muted px-4 text-sm font-black text-foreground transition-opacity active:opacity-80"
+              disabled={privacyAction !== "idle"}
+              onClick={() => setDeletionDialogOpen(false)}
+            >
+              Manter conta
+            </button>
+            <button
+              type="button"
+              className="h-12 rounded-full bg-primary px-4 text-sm font-black text-white shadow-[0_18px_40px_rgba(241,58,90,0.28)] transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={privacyAction !== "idle"}
+              onClick={() => void requestMyAccountDeletion()}
+            >
+              {privacyAction === "requestingDeletion" ? "Registrando..." : "Registrar pedido"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
@@ -571,6 +888,19 @@ function toStatNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function buildPrivacyExportUrl(
+  userId: string,
+  email: string | undefined,
+  name: string,
+  accountType: AccountType,
+  mode?: "view",
+) {
+  const params = new URLSearchParams({ userId, name, accountType });
+  if (email) params.set("email", email);
+  if (mode) params.set("mode", mode);
+  return `/api/privacy/export?${params.toString()}`;
+}
+
 function validateImageFile(file: File) {
   if (!isAllowedImageMimeType(file.type)) return "Envie uma imagem JPG, PNG ou WebP.";
   if (file.size > 2 * 1024 * 1024) return "A imagem deve ter até 2MB.";
@@ -610,16 +940,25 @@ function Row({
   label,
   helper,
   onClick,
+  disabled,
+  danger,
 }: {
   icon: React.ReactNode;
   label: string;
   helper?: string;
   onClick?: () => void;
+  disabled?: boolean;
+  danger?: boolean;
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-2xl bg-muted px-4 py-3.5 text-left text-sm font-medium"
+      disabled={disabled}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-2xl bg-muted px-4 py-3.5 text-left text-sm font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-60",
+        danger ? "text-primary" : undefined,
+      )}
     >
       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-background">
         {icon}

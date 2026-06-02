@@ -12,15 +12,18 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as VenueOnboardingRouteImport } from './routes/venue-onboarding'
 import { Route as VenueDashboardRouteImport } from './routes/venue-dashboard'
 import { Route as UpdatesRouteImport } from './routes/updates'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ReviewsRouteImport } from './routes/reviews'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PostAuthRouteImport } from './routes/post-auth'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as MapRouteImport } from './routes/map'
 import { Route as DiscoverRouteImport } from './routes/discover'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as VenuesVenueIdRouteImport } from './routes/venues.$venueId'
 import { Route as GroupsNewRouteImport } from './routes/groups.new'
@@ -42,6 +45,11 @@ const UpdatesRoute = UpdatesRouteImport.update({
   path: '/updates',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReviewsRoute = ReviewsRouteImport.update({
   id: '/reviews',
   path: '/reviews',
@@ -55,6 +63,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PostAuthRoute = PostAuthRouteImport.update({
@@ -87,6 +100,11 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -115,15 +133,18 @@ const EventsEventIdRoute = EventsEventIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/calendar': typeof CalendarRoute
   '/discover': typeof DiscoverRoute
   '/map': typeof MapRoute
   '/onboarding': typeof OnboardingRoute
   '/post-auth': typeof PostAuthRoute
+  '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/reset-password': typeof ResetPasswordRoute
   '/reviews': typeof ReviewsRoute
+  '/terms': typeof TermsRoute
   '/updates': typeof UpdatesRoute
   '/venue-dashboard': typeof VenueDashboardRoute
   '/venue-onboarding': typeof VenueOnboardingRoute
@@ -134,15 +155,18 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/calendar': typeof CalendarRoute
   '/discover': typeof DiscoverRoute
   '/map': typeof MapRoute
   '/onboarding': typeof OnboardingRoute
   '/post-auth': typeof PostAuthRoute
+  '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/reset-password': typeof ResetPasswordRoute
   '/reviews': typeof ReviewsRoute
+  '/terms': typeof TermsRoute
   '/updates': typeof UpdatesRoute
   '/venue-dashboard': typeof VenueDashboardRoute
   '/venue-onboarding': typeof VenueOnboardingRoute
@@ -154,15 +178,18 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/auth': typeof AuthRoute
   '/calendar': typeof CalendarRoute
   '/discover': typeof DiscoverRoute
   '/map': typeof MapRoute
   '/onboarding': typeof OnboardingRoute
   '/post-auth': typeof PostAuthRoute
+  '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/reset-password': typeof ResetPasswordRoute
   '/reviews': typeof ReviewsRoute
+  '/terms': typeof TermsRoute
   '/updates': typeof UpdatesRoute
   '/venue-dashboard': typeof VenueDashboardRoute
   '/venue-onboarding': typeof VenueOnboardingRoute
@@ -175,15 +202,18 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/auth'
     | '/calendar'
     | '/discover'
     | '/map'
     | '/onboarding'
     | '/post-auth'
+    | '/privacy'
     | '/profile'
     | '/reset-password'
     | '/reviews'
+    | '/terms'
     | '/updates'
     | '/venue-dashboard'
     | '/venue-onboarding'
@@ -194,15 +224,18 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin'
     | '/auth'
     | '/calendar'
     | '/discover'
     | '/map'
     | '/onboarding'
     | '/post-auth'
+    | '/privacy'
     | '/profile'
     | '/reset-password'
     | '/reviews'
+    | '/terms'
     | '/updates'
     | '/venue-dashboard'
     | '/venue-onboarding'
@@ -213,15 +246,18 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/admin'
     | '/auth'
     | '/calendar'
     | '/discover'
     | '/map'
     | '/onboarding'
     | '/post-auth'
+    | '/privacy'
     | '/profile'
     | '/reset-password'
     | '/reviews'
+    | '/terms'
     | '/updates'
     | '/venue-dashboard'
     | '/venue-onboarding'
@@ -233,15 +269,18 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   AuthRoute: typeof AuthRoute
   CalendarRoute: typeof CalendarRoute
   DiscoverRoute: typeof DiscoverRoute
   MapRoute: typeof MapRoute
   OnboardingRoute: typeof OnboardingRoute
   PostAuthRoute: typeof PostAuthRoute
+  PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   ReviewsRoute: typeof ReviewsRoute
+  TermsRoute: typeof TermsRoute
   UpdatesRoute: typeof UpdatesRoute
   VenueDashboardRoute: typeof VenueDashboardRoute
   VenueOnboardingRoute: typeof VenueOnboardingRoute
@@ -274,6 +313,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UpdatesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reviews': {
       id: '/reviews'
       path: '/reviews'
@@ -293,6 +339,13 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/post-auth': {
@@ -337,6 +390,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -377,15 +437,18 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   AuthRoute: AuthRoute,
   CalendarRoute: CalendarRoute,
   DiscoverRoute: DiscoverRoute,
   MapRoute: MapRoute,
   OnboardingRoute: OnboardingRoute,
   PostAuthRoute: PostAuthRoute,
+  PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   ReviewsRoute: ReviewsRoute,
+  TermsRoute: TermsRoute,
   UpdatesRoute: UpdatesRoute,
   VenueDashboardRoute: VenueDashboardRoute,
   VenueOnboardingRoute: VenueOnboardingRoute,

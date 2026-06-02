@@ -62,6 +62,59 @@ function corsPreflightResponse(request: Request): Response | null {
   return withCors(request, new Response(null, { status: 204 }));
 }
 
+async function privacyExportResponse(request: Request): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (url.pathname !== "/api/privacy/export") return null;
+
+  if (request.method !== "GET") {
+    return new Response(JSON.stringify({ error: "Método não permitido." }), {
+      status: 405,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
+
+  const userId = url.searchParams.get("userId") ?? "";
+  const email = url.searchParams.get("email") || undefined;
+  const name = url.searchParams.get("name") || undefined;
+  const accountType = url.searchParams.get("accountType") || undefined;
+  const mode = url.searchParams.get("mode");
+
+  try {
+    const [{ buildUserDataExport }, { requireAuthenticatedUserIdFromHeaders }] = await Promise.all([
+      import("./lib/privacy-export.server"),
+      import("./lib/server-auth"),
+    ]);
+    const authenticatedUserId = await requireAuthenticatedUserIdFromHeaders(
+      request.headers,
+      userId,
+    );
+    const payload = await buildUserDataExport(
+      { userId, email, name, accountType },
+      authenticatedUserId,
+    );
+    const fileName = `chegaai-meus-dados-${new Date().toISOString().slice(0, 10)}.json`;
+    const headers = new Headers({
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "private, no-store, max-age=0",
+    });
+
+    if (mode !== "view") {
+      headers.set("content-disposition", `attachment; filename="${fileName}"`);
+    }
+
+    return new Response(JSON.stringify(payload, null, 2), { headers });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Não foi possível exportar os dados.";
+    return new Response(JSON.stringify({ error: message }), {
+      status: message.includes("autenticado") || message.includes("Sessão") ? 401 : 500,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "private, no-store, max-age=0",
+      },
+    });
+  }
+}
+
 function isCatastrophicSsrErrorBody(body: string, responseStatus: number): boolean {
   let payload: unknown;
   try {
@@ -108,6 +161,9 @@ export default {
     try {
       const preflightResponse = corsPreflightResponse(request);
       if (preflightResponse) return preflightResponse;
+
+      const exportResponse = await privacyExportResponse(request);
+      if (exportResponse) return withCors(request, exportResponse);
 
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
