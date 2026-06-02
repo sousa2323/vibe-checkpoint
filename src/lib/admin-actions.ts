@@ -11,6 +11,14 @@ type UpdatePrivacyRequestInput = AdminInput & {
   internalNote?: string;
 };
 
+type AdminUsersInput = AdminInput & {
+  query?: string;
+};
+
+type AdminUserDetailInput = AdminInput & {
+  targetUserId: string;
+};
+
 export type PrivacyRequestStatus = "pending" | "in_review" | "resolved" | "rejected";
 
 export type AdminDashboard = {
@@ -28,6 +36,7 @@ export type AdminDashboard = {
   };
   privacyRequests: PrivacyRequestSummary[];
   recentUsers: AdminUserSummary[];
+  auditLogs: AdminAuditLogSummary[];
 };
 
 export type PrivacyRequestSummary = {
@@ -48,6 +57,57 @@ export type AdminUserSummary = {
   displayName: string | null;
   email: string | null;
   createdAt: string | null;
+  lastActivityAt: string | null;
+};
+
+export type AdminUserDetail = {
+  profile: AdminUserSummary & {
+    avatarUrl: string | null;
+    onboardingCompleted: boolean;
+  };
+  counts: {
+    savedEvents: number;
+    checkins: number;
+    reviews: number;
+    posts: number;
+    comments: number;
+    groupPlans: number;
+    ownedVenues: number;
+    ownedEvents: number;
+    privacyRequests: number;
+  };
+  savedEvents: AdminNamedItem[];
+  checkins: AdminNamedItem[];
+  reviews: AdminTextItem[];
+  posts: AdminTextItem[];
+  comments: AdminTextItem[];
+  groupPlans: AdminTextItem[];
+  ownedVenues: AdminNamedItem[];
+  ownedEvents: AdminNamedItem[];
+  privacyRequests: PrivacyRequestSummary[];
+};
+
+export type AdminNamedItem = {
+  id: string;
+  label: string;
+  helper: string | null;
+  createdAt: string | null;
+};
+
+export type AdminTextItem = AdminNamedItem & {
+  text: string | null;
+};
+
+export type AdminAuditLogSummary = {
+  id: string;
+  adminUserId: string;
+  adminName: string | null;
+  adminEmail: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  entityLabel: string | null;
+  createdAt: string;
 };
 
 export const getAdminDashboard = createServerFn({ method: "GET" })
@@ -63,6 +123,7 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
       privacyPendingRows,
       privacyRows,
       recentUserRows,
+      auditRows,
     ] = await Promise.all([
       sql`
           SELECT up.display_name, au.email
@@ -82,12 +143,22 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
           LIMIT 30
         `,
       sql`
-          SELECT up.user_id, up.account_type, up.display_name, au.email, up.created_at
+          SELECT up.user_id, up.account_type, up.display_name, au.email, up.created_at,
+            GREATEST(
+              up.updated_at,
+              up.created_at,
+              (SELECT MAX(created_at) FROM public.checkins WHERE user_id = up.user_id),
+              (SELECT MAX(created_at) FROM public.saved_events WHERE user_id = up.user_id),
+              (SELECT MAX(created_at) FROM public.event_reviews WHERE user_id = up.user_id),
+              (SELECT MAX(created_at) FROM public.user_posts WHERE user_id = up.user_id),
+              (SELECT MAX(created_at) FROM public.user_post_comments WHERE user_id = up.user_id)
+            ) AS last_activity_at
           FROM public.user_profiles up
           LEFT JOIN auth.users au ON au.id = up.user_id::uuid
           ORDER BY up.created_at DESC NULLS LAST
           LIMIT 8
         `,
+      auditLogQuery(sql),
     ]);
 
     return {
@@ -105,7 +176,184 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
       },
       privacyRequests: privacyRows.map(toPrivacyRequest),
       recentUsers: recentUserRows.map(toAdminUser),
+      auditLogs: auditRows.map(toAdminAuditLog),
     };
+  });
+
+export const getAdminUsers = createServerFn({ method: "GET" })
+  .inputValidator((data: AdminUsersInput) => data)
+  .handler(async ({ data }): Promise<AdminUserSummary[]> => {
+    const { sql } = await requireAdmin(data.userId);
+    const search = data.query?.trim() ? `%${data.query.trim()}%` : null;
+    const rows = await sql`
+      SELECT up.user_id, up.account_type, up.display_name, au.email, up.created_at,
+        GREATEST(
+          up.updated_at,
+          up.created_at,
+          (SELECT MAX(created_at) FROM public.checkins WHERE user_id = up.user_id),
+          (SELECT MAX(created_at) FROM public.saved_events WHERE user_id = up.user_id),
+          (SELECT MAX(created_at) FROM public.event_reviews WHERE user_id = up.user_id),
+          (SELECT MAX(created_at) FROM public.user_posts WHERE user_id = up.user_id),
+          (SELECT MAX(created_at) FROM public.user_post_comments WHERE user_id = up.user_id)
+        ) AS last_activity_at
+      FROM public.user_profiles up
+      LEFT JOIN auth.users au ON au.id = up.user_id::uuid
+      WHERE ${search}::text IS NULL
+        OR up.display_name ILIKE ${search}
+        OR au.email ILIKE ${search}
+        OR up.account_type ILIKE ${search}
+      ORDER BY up.created_at DESC NULLS LAST
+      LIMIT 50
+    `;
+
+    return rows.map(toAdminUser);
+  });
+
+export const getAdminUserDetail = createServerFn({ method: "GET" })
+  .inputValidator((data: AdminUserDetailInput) => data)
+  .handler(async ({ data }): Promise<AdminUserDetail> => {
+    const { userId, sql } = await requireAdmin(data.userId);
+    const targetUserId = data.targetUserId;
+
+    const [profileRows, savedRows, checkinRows, reviewRows, postRows, commentRows] =
+      await Promise.all([
+        sql`
+          SELECT up.user_id, up.account_type, up.display_name, up.avatar_url, up.onboarding_completed,
+            au.email, up.created_at,
+            GREATEST(up.updated_at, up.created_at) AS last_activity_at
+          FROM public.user_profiles up
+          LEFT JOIN auth.users au ON au.id = up.user_id::uuid
+          WHERE up.user_id = ${targetUserId}
+          LIMIT 1
+        `,
+        sql`
+          SELECT se.event_id AS id, e.title AS label, v.name AS helper, se.created_at
+          FROM public.saved_events se
+          LEFT JOIN public.events e ON e.id = se.event_id
+          LEFT JOIN public.venues v ON v.id = e.venue_id
+          WHERE se.user_id = ${targetUserId}
+          ORDER BY se.created_at DESC
+          LIMIT 8
+        `,
+        sql`
+          SELECT c.id, COALESCE(e.title, v.name, 'Check-in') AS label, v.name AS helper, c.created_at
+          FROM public.checkins c
+          LEFT JOIN public.events e ON e.id = c.event_id
+          LEFT JOIN public.venues v ON v.id = c.venue_id
+          WHERE c.user_id = ${targetUserId}
+          ORDER BY c.created_at DESC
+          LIMIT 8
+        `,
+        sql`
+          SELECT er.id, COALESCE(e.title, 'Avaliação') AS label, er.comment AS text, er.created_at
+          FROM public.event_reviews er
+          LEFT JOIN public.events e ON e.id = er.event_id
+          WHERE er.user_id = ${targetUserId}
+          ORDER BY er.created_at DESC
+          LIMIT 8
+        `,
+        sql`
+          SELECT p.id, COALESCE(v.name, e.title, 'Post') AS label, p.caption AS text, p.created_at
+          FROM public.user_posts p
+          LEFT JOIN public.venues v ON v.id = p.venue_id
+          LEFT JOIN public.events e ON e.id = p.event_id
+          WHERE p.user_id = ${targetUserId}
+          ORDER BY p.created_at DESC
+          LIMIT 8
+        `,
+        sql`
+          SELECT pc.id, COALESCE(p.caption, 'Comentário') AS label, pc.body AS text, pc.created_at
+          FROM public.user_post_comments pc
+          LEFT JOIN public.user_posts p ON p.id = pc.post_id
+          WHERE pc.user_id = ${targetUserId}
+          ORDER BY pc.created_at DESC
+          LIMIT 8
+        `,
+      ]);
+
+    if (!profileRows[0]) throw new Error("Usuário não encontrado.");
+
+    const [groupRows, venueRows, eventRows, privacyRows, countRows] = await Promise.all([
+      sql`
+        SELECT id, title AS label, description AS text, created_at
+        FROM public.group_plans
+        WHERE creator_user_id = ${targetUserId}
+        ORDER BY created_at DESC
+        LIMIT 8
+      `,
+      sql`
+        SELECT id, name AS label, neighborhood AS helper, created_at
+        FROM public.venues
+        WHERE owner_user_id = ${targetUserId}
+        ORDER BY created_at DESC
+        LIMIT 8
+      `,
+      sql`
+        SELECT e.id, e.title AS label, v.name AS helper, e.created_at
+        FROM public.events e
+        JOIN public.venues v ON v.id = e.venue_id
+        WHERE v.owner_user_id = ${targetUserId}
+        ORDER BY e.created_at DESC
+        LIMIT 8
+      `,
+      sql`
+        SELECT id, user_id, request_type, email, reason, status, internal_note, created_at, resolved_at
+        FROM public.privacy_requests
+        WHERE user_id = ${targetUserId}::uuid
+        ORDER BY created_at DESC
+      `,
+      sql`
+        SELECT
+          (SELECT COUNT(*)::int FROM public.saved_events WHERE user_id = ${targetUserId}) AS saved_events,
+          (SELECT COUNT(*)::int FROM public.checkins WHERE user_id = ${targetUserId}) AS checkins,
+          (SELECT COUNT(*)::int FROM public.event_reviews WHERE user_id = ${targetUserId}) AS reviews,
+          (SELECT COUNT(*)::int FROM public.user_posts WHERE user_id = ${targetUserId}) AS posts,
+          (SELECT COUNT(*)::int FROM public.user_post_comments WHERE user_id = ${targetUserId}) AS comments,
+          (SELECT COUNT(*)::int FROM public.group_plans WHERE creator_user_id = ${targetUserId}) AS group_plans,
+          (SELECT COUNT(*)::int FROM public.venues WHERE owner_user_id = ${targetUserId}) AS owned_venues,
+          (SELECT COUNT(*)::int FROM public.events e JOIN public.venues v ON v.id = e.venue_id WHERE v.owner_user_id = ${targetUserId}) AS owned_events,
+          (SELECT COUNT(*)::int FROM public.privacy_requests WHERE user_id = ${targetUserId}::uuid) AS privacy_requests
+      `,
+    ]);
+
+    await insertAuditLog(sql, userId, "user_detail_opened", "user", targetUserId, {});
+
+    const counts = countRows[0] ?? {};
+    return {
+      profile: {
+        ...toAdminUser(profileRows[0]),
+        avatarUrl: nullableString(profileRows[0].avatar_url),
+        onboardingCompleted: Boolean(profileRows[0].onboarding_completed),
+      },
+      counts: {
+        savedEvents: Number(counts.saved_events ?? 0),
+        checkins: Number(counts.checkins ?? 0),
+        reviews: Number(counts.reviews ?? 0),
+        posts: Number(counts.posts ?? 0),
+        comments: Number(counts.comments ?? 0),
+        groupPlans: Number(counts.group_plans ?? 0),
+        ownedVenues: Number(counts.owned_venues ?? 0),
+        ownedEvents: Number(counts.owned_events ?? 0),
+        privacyRequests: Number(counts.privacy_requests ?? 0),
+      },
+      savedEvents: savedRows.map(toNamedItem),
+      checkins: checkinRows.map(toNamedItem),
+      reviews: reviewRows.map(toTextItem),
+      posts: postRows.map(toTextItem),
+      comments: commentRows.map(toTextItem),
+      groupPlans: groupRows.map(toTextItem),
+      ownedVenues: venueRows.map(toNamedItem),
+      ownedEvents: eventRows.map(toNamedItem),
+      privacyRequests: privacyRows.map(toPrivacyRequest),
+    };
+  });
+
+export const getAdminAuditLogs = createServerFn({ method: "GET" })
+  .inputValidator((data: AdminInput) => data)
+  .handler(async ({ data }): Promise<AdminAuditLogSummary[]> => {
+    const { sql } = await requireAdmin(data.userId);
+    const rows = await auditLogQuery(sql);
+    return rows.map(toAdminAuditLog);
   });
 
 export const getAdminAccess = createServerFn({ method: "GET" })
@@ -138,10 +386,17 @@ export const updatePrivacyRequestStatus = createServerFn({ method: "POST" })
 
     if (!rows[0]) throw new Error("Pedido LGPD não encontrado.");
 
-    await sql`
-      INSERT INTO public.admin_audit_logs (admin_user_id, action, entity_type, entity_id, metadata)
-      VALUES (${userId}, 'privacy_request_status_updated', 'privacy_request', ${data.requestId}, ${JSON.stringify({ status: nextStatus, hasNote: Boolean(note) })}::jsonb)
-    `;
+    await insertAuditLog(
+      sql,
+      userId,
+      "privacy_request_status_updated",
+      "privacy_request",
+      data.requestId,
+      {
+        status: nextStatus,
+        hasNote: Boolean(note),
+      },
+    );
 
     return toPrivacyRequest(rows[0]);
   });
@@ -176,6 +431,38 @@ async function requireAdmin(expectedUserId: string) {
   if (typeof role !== "string") throw new Error("Acesso admin não autorizado.");
 
   return { userId, role, sql };
+}
+
+function auditLogQuery(sql: SqlClient) {
+  return sql`
+    SELECT l.id, l.admin_user_id, up.display_name AS admin_name, au.email AS admin_email,
+      l.action, l.entity_type, l.entity_id, l.created_at,
+      COALESCE(target_user.display_name, target_auth.email, privacy_user.display_name, privacy_auth.email) AS entity_label
+    FROM public.admin_audit_logs l
+    LEFT JOIN public.user_profiles up ON up.user_id = l.admin_user_id::text
+    LEFT JOIN auth.users au ON au.id = l.admin_user_id
+    LEFT JOIN public.user_profiles target_user ON l.entity_type = 'user' AND target_user.user_id = l.entity_id
+    LEFT JOIN auth.users target_auth ON l.entity_type = 'user' AND target_auth.id = l.entity_id::uuid
+    LEFT JOIN public.privacy_requests pr ON l.entity_type = 'privacy_request' AND pr.id::text = l.entity_id
+    LEFT JOIN public.user_profiles privacy_user ON privacy_user.user_id = pr.user_id::text
+    LEFT JOIN auth.users privacy_auth ON privacy_auth.id = pr.user_id
+    ORDER BY l.created_at DESC
+    LIMIT 50
+  `;
+}
+
+async function insertAuditLog(
+  sql: SqlClient,
+  adminUserId: string,
+  action: string,
+  entityType: string,
+  entityId: string | null,
+  metadata: Record<string, unknown>,
+) {
+  await sql`
+    INSERT INTO public.admin_audit_logs (admin_user_id, action, entity_type, entity_id, metadata)
+    VALUES (${adminUserId}, ${action}, ${entityType}, ${entityId}, ${JSON.stringify(metadata)}::jsonb)
+  `;
 }
 
 async function ensureAdminSchema(sql: SqlClient) {
@@ -249,6 +536,37 @@ function toAdminUser(row: Record<string, unknown>): AdminUserSummary {
     displayName: nullableString(row.display_name),
     email: nullableString(row.email),
     createdAt: row.created_at ? stringifyDate(row.created_at) : null,
+    lastActivityAt: row.last_activity_at ? stringifyDate(row.last_activity_at) : null,
+  };
+}
+
+function toNamedItem(row: Record<string, unknown>): AdminNamedItem {
+  return {
+    id: String(row.id),
+    label: nullableString(row.label) ?? "Sem título",
+    helper: nullableString(row.helper),
+    createdAt: row.created_at ? stringifyDate(row.created_at) : null,
+  };
+}
+
+function toTextItem(row: Record<string, unknown>): AdminTextItem {
+  return {
+    ...toNamedItem(row),
+    text: nullableString(row.text),
+  };
+}
+
+function toAdminAuditLog(row: Record<string, unknown>): AdminAuditLogSummary {
+  return {
+    id: String(row.id),
+    adminUserId: String(row.admin_user_id),
+    adminName: nullableString(row.admin_name),
+    adminEmail: nullableString(row.admin_email),
+    action: String(row.action),
+    entityType: String(row.entity_type),
+    entityId: nullableString(row.entity_id),
+    entityLabel: nullableString(row.entity_label),
+    createdAt: stringifyDate(row.created_at),
   };
 }
 
