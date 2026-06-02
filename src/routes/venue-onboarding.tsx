@@ -310,7 +310,8 @@ function VenueOnboarding() {
     const instagram = normalizeInstagram(formValues.instagram);
     const capacity = Number(onlyDigits(formValues.capacity, 6));
     const description = formValues.description.trim();
-    const image = formData.get("image") instanceof File ? (formData.get("image") as File) : null;
+    const imageField = formData.get("image");
+    const image = imageField instanceof File && imageField.size > 0 ? imageField : null;
     const imageError = image ? validateImageFile(image) : null;
 
     if (!venueName || !businessRole || !category || !state || !city || !neighborhood || !address) {
