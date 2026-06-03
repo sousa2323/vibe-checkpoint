@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { LocateFixed, MapPin, Search, UsersRound } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { authClient, getAuthUserName } from "@/auth";
 import { BottomNav } from "@/components/bottom-nav";
 import { CommentsSheet } from "@/components/comments-sheet";
@@ -30,6 +30,7 @@ import {
   type Coordinates,
   distanceKm,
   formatDistance,
+  readLocationConsent,
   readSavedLocation,
   readSavedRadiusKm,
   requestCurrentLocation,
@@ -58,6 +59,28 @@ const establishmentCategories = [
   "outro",
 ];
 
+const LOCATION_PROMPT_DISMISSED_KEY = "chegaai:location-prompt-dismissed";
+
+function readLocationPromptDismissed() {
+  if (typeof window === "undefined") return false;
+
+  try {
+    return window.localStorage.getItem(LOCATION_PROMPT_DISMISSED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function dismissLocationPrompt() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(LOCATION_PROMPT_DISMISSED_KEY, "true");
+  } catch {
+    // Prompt dismissal is convenience-only; permission/cache remain the source of truth.
+  }
+}
+
 function Discover() {
   const loaderData = Route.useLoaderData();
   const navigate = useNavigate();
@@ -85,6 +108,8 @@ function Discover() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [commentsPostId, setCommentsPostId] = useState<string | undefined>();
   const [status, setStatus] = useState<string | null>(null);
+  const [showLocationPrompt, setShowLocationPrompt] = useState(false);
+  const locationInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user?.id) {
@@ -138,7 +163,12 @@ function Discover() {
       }
 
       const allowed = await canRestoreLocation();
-      if (!allowed || cancelled) return;
+      if (!allowed || cancelled) {
+        if (!savedLocation && !readLocationConsent() && !readLocationPromptDismissed()) {
+          setShowLocationPrompt(true);
+        }
+        return;
+      }
 
       setLocating(true);
       try {
@@ -152,8 +182,13 @@ function Discover() {
         setLocationLabel(label ?? savedLocation?.label ?? "Perto de você");
         saveLocationConsent();
         saveCurrentLocation(current, label ?? savedLocation?.label);
+        dismissLocationPrompt();
+        setShowLocationPrompt(false);
       } catch {
         if (!cancelled && savedLocation?.label) setLocationLabel(savedLocation.label);
+        if (!cancelled && !savedLocation && !readLocationPromptDismissed()) {
+          setShowLocationPrompt(true);
+        }
       } finally {
         if (!cancelled) setLocating(false);
       }
@@ -239,6 +274,8 @@ function Discover() {
       setLocationLabel(label ?? "Perto de você");
       saveLocationConsent();
       saveCurrentLocation(current, label ?? "Perto de você");
+      dismissLocationPrompt();
+      setShowLocationPrompt(false);
       setStatus("Localização ativada. Eventos próximos primeiro.");
     } catch (cause) {
       setStatus(cause instanceof Error ? cause.message : "Não foi possível localizar você.");
@@ -262,12 +299,46 @@ function Discover() {
       setLocation({ latitude: result.latitude, longitude: result.longitude });
       setLocationLabel(result.label);
       saveCurrentLocation({ latitude: result.latitude, longitude: result.longitude }, result.label);
+      dismissLocationPrompt();
+      setShowLocationPrompt(false);
       setStatus("Região definida. Eventos próximos primeiro.");
     } catch {
       setStatus("Não foi possível buscar essa região agora.");
     } finally {
       setLocating(false);
     }
+  }
+
+  async function handleLocationPromptAllow() {
+    setLocating(true);
+    try {
+      const current = await requestCurrentLocation();
+      setLocation(current);
+      const label = await reverseLocation({ data: current });
+      setLocationLabel(label ?? "Perto de você");
+      saveLocationConsent();
+      saveCurrentLocation(current, label ?? "Perto de você");
+      dismissLocationPrompt();
+      setShowLocationPrompt(false);
+      setStatus("Localização ativada. Eventos próximos primeiro.");
+    } catch (cause) {
+      dismissLocationPrompt();
+      setShowLocationPrompt(false);
+      setStatus(cause instanceof Error ? cause.message : "Não foi possível localizar você.");
+    } finally {
+      setLocating(false);
+    }
+  }
+
+  function handleLocationPromptDismiss() {
+    dismissLocationPrompt();
+    setShowLocationPrompt(false);
+  }
+
+  function handleLocationPromptManualSearch() {
+    dismissLocationPrompt();
+    setShowLocationPrompt(false);
+    window.setTimeout(() => locationInputRef.current?.focus(), 0);
   }
 
   async function handleSmartSearch() {
@@ -282,6 +353,8 @@ function Discover() {
       setLocation({ latitude: result.latitude, longitude: result.longitude });
       setLocationLabel(result.label);
       saveCurrentLocation({ latitude: result.latitude, longitude: result.longitude }, result.label);
+      dismissLocationPrompt();
+      setShowLocationPrompt(false);
       setStatus("Busca aplicada por endereço. Eventos próximos primeiro.");
     } catch {
       setStatus("Não foi possível buscar esse endereço agora.");
@@ -413,6 +486,7 @@ function Discover() {
             <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-full bg-muted px-4">
               <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
               <input
+                ref={locationInputRef}
                 value={locationInput}
                 onChange={(event) => setLocationInput(event.target.value)}
                 onKeyDown={(event) => {
@@ -444,6 +518,48 @@ function Discover() {
           </div>
         </div>
       </div>
+
+      {showLocationPrompt ? (
+        <section className="mx-6 mt-4 rounded-[1.75rem] bg-primary p-4 text-white shadow-[0_18px_44px_rgba(241,58,90,0.2)]">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/18">
+              <LocateFixed className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base font-black tracking-tight">
+                Ative sua localização para ver rolês próximos
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-white/76">
+                O ChegaAí usa sua posição só para ordenar eventos, bares e check-ins perto de você.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => void handleLocationPromptAllow()}
+              disabled={locating}
+              className="h-10 rounded-full bg-white px-4 text-xs font-black text-ink disabled:opacity-70"
+            >
+              {locating ? "Localizando..." : "Ativar localização"}
+            </button>
+            <button
+              type="button"
+              onClick={handleLocationPromptManualSearch}
+              className="h-10 rounded-full bg-white/14 px-4 text-xs font-black text-white ring-1 ring-white/18"
+            >
+              Buscar bairro
+            </button>
+            <button
+              type="button"
+              onClick={handleLocationPromptDismiss}
+              className="h-10 rounded-full px-4 text-xs font-black text-white/70"
+            >
+              Agora não
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section className="mx-6 mt-5 rounded-[1.75rem] bg-ink p-4 text-white">
         <div className="flex items-center gap-3">
