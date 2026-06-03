@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { MapPin, Store } from "lucide-react";
+import { Eye, EyeOff, MapPin, Store } from "lucide-react";
 import { type KeyboardEvent, useEffect, useState } from "react";
 import { authClient } from "@/auth";
 import { Button } from "@/components/ui/button";
@@ -93,17 +93,17 @@ function Auth() {
       </div>
 
       <div className="mb-6 flex rounded-full bg-muted p-1">
-        {(["login", "signup"] as Tab[]).map((t) => (
+        {(["login", "signup"] as Tab[]).map((authTab) => (
           <button
-            key={t}
+            key={authTab}
             type="button"
-            onClick={() => setTab(t)}
+            onClick={() => setTab(authTab)}
             className={cn(
               "flex-1 rounded-full py-2.5 text-sm font-semibold transition-all",
-              tab === t ? "bg-ink text-white" : "text-muted-foreground",
+              tab === authTab ? "bg-ink text-white" : "text-muted-foreground",
             )}
           >
-            {t === "login" ? "Entrar" : "Criar conta"}
+            {authTab === "login" ? "Entrar" : "Criar conta"}
           </button>
         ))}
       </div>
@@ -213,6 +213,7 @@ function LoginForm({
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -384,17 +385,29 @@ function LoginForm({
               Esqueceu sua senha?
             </button>
           </div>
-          <Input
-            id="login-password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            placeholder="Senha"
-            value={password}
-            disabled={isSubmitting}
-            onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={submitOnEnter}
-          />
+          <div className="relative">
+            <Input
+              id="login-password"
+              name="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              placeholder="Senha"
+              value={password}
+              disabled={isSubmitting}
+              className="pr-10"
+              onChange={(event) => setPassword(event.target.value)}
+              onKeyDown={submitOnEnter}
+            />
+            <button
+              type="button"
+              aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground disabled:opacity-50"
+              disabled={isSubmitting}
+              onClick={() => setShowPassword((current) => !current)}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
 
         {status ? (
@@ -439,6 +452,7 @@ function SignupForm({
   const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const submit = async () => {
     const trimmedEmail = email.trim();
@@ -538,17 +552,29 @@ function SignupForm({
 
         <div className="grid gap-2">
           <Label htmlFor="signup-password">Senha</Label>
-          <Input
-            id="signup-password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            placeholder="Senha"
-            value={password}
-            disabled={isSubmitting}
-            onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={submitOnEnter}
-          />
+          <div className="relative">
+            <Input
+              id="signup-password"
+              name="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="new-password"
+              placeholder="Senha"
+              value={password}
+              disabled={isSubmitting}
+              className="pr-10"
+              onChange={(event) => setPassword(event.target.value)}
+              onKeyDown={submitOnEnter}
+            />
+            <button
+              type="button"
+              aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground disabled:opacity-50"
+              disabled={isSubmitting}
+              onClick={() => setShowPassword((current) => !current)}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
 
         <label className="flex items-start gap-3 rounded-2xl border border-border bg-muted/40 p-3 text-sm leading-relaxed">

@@ -30,10 +30,10 @@ export function distanceKm(from: Coordinates, to: Coordinates) {
   const fromLat = toRadians(from.latitude);
   const toLat = toRadians(to.latitude);
 
-  const a =
+  const haversineFactor =
     Math.sin(latDelta / 2) ** 2 + Math.cos(fromLat) * Math.cos(toLat) * Math.sin(lonDelta / 2) ** 2;
 
-  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(haversineFactor), Math.sqrt(1 - haversineFactor));
 }
 
 export function formatDistance(km?: number) {

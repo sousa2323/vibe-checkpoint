@@ -38,21 +38,25 @@ export function RealMap({
     async function setupMap() {
       if (!containerRef.current || mapRef.current) return;
 
-      const L = await import("leaflet");
+      const leaflet = await import("leaflet");
       if (cancelled || !containerRef.current) return;
 
-      const map = L.map(containerRef.current, {
-        zoomControl: true,
-        attributionControl: true,
-      }).setView([center.latitude, center.longitude], zoom);
+      const map = leaflet
+        .map(containerRef.current, {
+          zoomControl: true,
+          attributionControl: true,
+        })
+        .setView([center.latitude, center.longitude], zoom);
 
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 19,
-      }).addTo(map);
+      leaflet
+        .tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+          maxZoom: 19,
+        })
+        .addTo(map);
 
-      markerLayerRef.current = L.layerGroup().addTo(map);
-      routeLayerRef.current = L.layerGroup().addTo(map);
+      markerLayerRef.current = leaflet.layerGroup().addTo(map);
+      routeLayerRef.current = leaflet.layerGroup().addTo(map);
       mapRef.current = map;
     }
 
@@ -72,7 +76,7 @@ export function RealMap({
       const routeLayer = routeLayerRef.current;
       if (!map || !markerLayer || !routeLayer) return;
 
-      const L = await import("leaflet");
+      const leaflet = await import("leaflet");
       if (cancelled) return;
 
       markerLayer.clearLayers();
@@ -85,19 +89,21 @@ export function RealMap({
           (point) => [point.latitude, point.longitude] as [number, number],
         );
         bounds.push(...routePositions);
-        L.polyline(routePositions, {
-          color: "#ff4d00",
-          opacity: 0.92,
-          weight: 5,
-        }).addTo(routeLayer);
+        leaflet
+          .polyline(routePositions, {
+            color: "#ff4d00",
+            opacity: 0.92,
+            weight: 5,
+          })
+          .addTo(routeLayer);
       }
 
       markers.forEach((marker) => {
         const position: import("leaflet").LatLngExpression = [marker.latitude, marker.longitude];
         bounds.push(position);
 
-        const leafletMarker = L.marker(position, {
-          icon: L.divIcon({
+        const leafletMarker = leaflet.marker(position, {
+          icon: leaflet.divIcon({
             className: "chegaai-map-marker",
             html: markerHtml(marker),
             iconAnchor: [18, 18],
@@ -112,7 +118,7 @@ export function RealMap({
       });
 
       if (bounds.length > 1) {
-        map.fitBounds(L.latLngBounds(bounds), { padding: [34, 34], maxZoom: zoom });
+        map.fitBounds(leaflet.latLngBounds(bounds), { padding: [34, 34], maxZoom: zoom });
         return;
       }
 

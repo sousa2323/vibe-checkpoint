@@ -103,12 +103,12 @@ function Onboarding() {
         </p>
 
         <div className="mt-7 flex items-center gap-2">
-          {slides.map((_, n) => (
+          {slides.map((_, slideIndex) => (
             <span
-              key={n}
+              key={slideIndex}
               className={cn(
                 "h-2 rounded-full transition-all duration-300",
-                n === i ? "w-8 bg-primary" : "w-2 bg-muted",
+                slideIndex === i ? "w-8 bg-primary" : "w-2 bg-muted",
               )}
             />
           ))}

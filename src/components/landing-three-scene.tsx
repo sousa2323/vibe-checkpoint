@@ -25,10 +25,10 @@ function CityPulseScene({ reduceMotion }: LandingThreeSceneProps) {
   useFrame(({ clock }) => {
     if (!city.current || reduceMotion) return;
 
-    const t = clock.getElapsedTime();
-    city.current.rotation.y = -0.34 + Math.sin(t * 0.32) * 0.13;
-    city.current.rotation.x = -0.12 + Math.sin(t * 0.22) * 0.035;
-    city.current.position.y = Math.sin(t * 0.7) * 0.08;
+    const elapsedTime = clock.getElapsedTime();
+    city.current.rotation.y = -0.34 + Math.sin(elapsedTime * 0.32) * 0.13;
+    city.current.rotation.x = -0.12 + Math.sin(elapsedTime * 0.22) * 0.035;
+    city.current.position.y = Math.sin(elapsedTime * 0.7) * 0.08;
   });
 
   return (
@@ -120,10 +120,10 @@ function PulseBeacon({
   useFrame(({ clock }) => {
     if (!ring.current || reduceMotion) return;
 
-    const t = clock.getElapsedTime() * 1.45 + delay;
-    const pulse = 0.78 + Math.sin(t) * 0.18;
+    const elapsedTime = clock.getElapsedTime() * 1.45 + delay;
+    const pulse = 0.78 + Math.sin(elapsedTime) * 0.18;
     ring.current.scale.setScalar(pulse);
-    ring.current.rotation.z = t * 0.28;
+    ring.current.rotation.z = elapsedTime * 0.28;
   });
 
   return (

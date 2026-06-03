@@ -45,6 +45,7 @@ export const ptBRAuthLocalization = {
 } satisfies Record<string, string>;
 
 const authToastMessages: Record<string, string> = {
+  "Invalid login credentials": "Email ou senha inválidos. Confira os dados e tente novamente.",
   "User already exists": "Este email já está cadastrado. Tente entrar ou use outro email.",
   "User already exists. Use another email.":
     "Este email já está cadastrado. Tente entrar ou use outro email.",
@@ -59,5 +60,24 @@ export function formatAuthToastMessage(message: unknown) {
   if (typeof message !== "string") return "Não foi possível concluir a ação. Tente novamente.";
 
   const normalizedMessage = message.trim();
+  const hasMinimumPasswordLength = normalizedMessage.includes(
+    "Password should be at least 8 characters",
+  );
+  const hasPasswordCharacterPolicy = normalizedMessage.includes(
+    "Password should contain at least one character of each",
+  );
+
+  if (hasMinimumPasswordLength && hasPasswordCharacterPolicy) {
+    return "A senha deve ter pelo menos 8 caracteres e conter letra minúscula, letra maiúscula, número e caractere especial.";
+  }
+
+  if (hasMinimumPasswordLength) {
+    return "A senha deve ter pelo menos 8 caracteres.";
+  }
+
+  if (hasPasswordCharacterPolicy) {
+    return "A senha deve conter pelo menos uma letra minúscula, uma letra maiúscula, um número e um caractere especial.";
+  }
+
   return authToastMessages[normalizedMessage] ?? normalizedMessage;
 }

@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { Heart, MessageCircle, MapPin, Sparkles } from "lucide-react";
 import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
 import { UserAvatar } from "@/components/user-avatar";
@@ -19,12 +20,17 @@ export function FeedPostCard({ post, onLike, onOpenComments }: FeedPostCardProps
         <UserAvatar name={post.authorName} imageUrl={post.authorAvatarUrl} className="h-11 w-11" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-black">{post.authorName}</p>
-          <div className="mt-0.5 flex items-center gap-1 text-xs font-semibold text-muted-foreground">
+          <Link
+            to="/venues/$venueId"
+            params={{ venueId: post.venueId }}
+            aria-label={`Abrir perfil de ${post.venueName}`}
+            className="mt-0.5 flex items-center gap-1 text-xs font-semibold text-muted-foreground transition hover:text-foreground"
+          >
             <MapPin className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">
               {post.venueName}, {post.venueNeighborhood}
             </span>
-          </div>
+          </Link>
         </div>
         {post.eventTitle ? (
           <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-primary">

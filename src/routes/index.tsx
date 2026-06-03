@@ -70,7 +70,7 @@ function NativeSplash() {
       seen = false;
     }
 
-    const t = setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       if (user?.id) {
         navigate({ to: "/post-auth", replace: true });
         return;
@@ -78,7 +78,7 @@ function NativeSplash() {
 
       navigate({ to: seen ? "/auth" : "/onboarding", replace: true });
     }, 250);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timeoutId);
   }, [isPending, navigate, user?.id]);
 
   return (
