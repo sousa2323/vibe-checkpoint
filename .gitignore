@@ -42,7 +42,10 @@ docs
 .opencode
 migrations
 DEPLOY.md
-supabase
+supabase/*
+!supabase/migrations/
+supabase/migrations/*
+!supabase/migrations/20260605101500_add_event_recurrence.sql
 ANDROID.md
 erro.txt
 

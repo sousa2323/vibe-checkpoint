@@ -3,6 +3,8 @@ import {
   canEventAcceptExplorerActions,
   canEventAppearInGroupVoting,
   EVENT_ACTIVE_WINDOW_HOURS,
+  getNextWeeklyOccurrence,
+  getWeeklyRecurrenceParts,
 } from "./event-time";
 
 const hourMs = 60 * 60 * 1000;
@@ -38,5 +40,32 @@ describe("canEventAppearInGroupVoting", () => {
     expect(canEventAppearInGroupVoting("2026-06-01T23:00:00.000Z", Date.UTC(2026, 5, 2, 12))).toBe(
       false,
     );
+  });
+});
+
+describe("weekly recurrence", () => {
+  it("extracts weekday and time from a datetime-local value", () => {
+    expect(getWeeklyRecurrenceParts("2026-06-05T20:30")).toEqual({
+      weekday: 5,
+      time: "20:30:00",
+    });
+  });
+
+  it("keeps this week's occurrence while it is still active", () => {
+    const occurrence = getNextWeeklyOccurrence(
+      "2026-06-05T20:00:00.000Z",
+      Date.UTC(2026, 5, 6, 12),
+    );
+
+    expect(occurrence).toBe("2026-06-05T20:00:00.000Z");
+  });
+
+  it("moves to next week after the active window closes", () => {
+    const occurrence = getNextWeeklyOccurrence(
+      "2026-06-05T20:00:00.000Z",
+      Date.UTC(2026, 5, 7, 21),
+    );
+
+    expect(occurrence).toBe("2026-06-12T20:00:00.000Z");
   });
 });

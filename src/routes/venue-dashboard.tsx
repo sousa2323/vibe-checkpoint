@@ -131,6 +131,7 @@ function VenueDashboard() {
     const description = String(formData.get("description") ?? "").trim();
     const startsAt = String(formData.get("startsAt") ?? "");
     const price = String(formData.get("price") ?? "").trim();
+    const recurrenceType = formData.get("recurrenceType") === "weekly" ? "weekly" : "none";
     const image = formData.get("image") instanceof File ? (formData.get("image") as File) : null;
     const imageError = validateImageFile(image);
 
@@ -166,6 +167,7 @@ function VenueDashboard() {
           startsAt,
           priceCents: Number.isFinite(priceCents) ? priceCents : undefined,
           imageUrl: media.mediaUrl,
+          recurrenceType,
         },
       });
 
@@ -202,6 +204,7 @@ function VenueDashboard() {
     const description = String(formData.get("description") ?? "").trim();
     const startsAt = String(formData.get("startsAt") ?? "");
     const price = String(formData.get("price") ?? "").trim();
+    const recurrenceType = formData.get("recurrenceType") === "weekly" ? "weekly" : "none";
     const imageField = formData.get("image");
     const image = imageField instanceof File && imageField.size > 0 ? imageField : null;
 
@@ -243,6 +246,7 @@ function VenueDashboard() {
           startsAt,
           priceCents,
           imageUrl,
+          recurrenceType,
         },
       });
 
@@ -561,6 +565,7 @@ function VenueDashboard() {
               options={EVENT_CATEGORY_OPTIONS}
             />
             <AppDateTimeField label="Data e hora" name="startsAt" required />
+            <RecurringEventField />
             <AppCurrencyField label="Preço" name="price" />
             <label className="block">
               <span className="text-sm font-semibold">Descrição</span>
@@ -1136,6 +1141,7 @@ function EditEventPanel({
         defaultValue={formatForDateTimeInput(event.startsAt)}
         required
       />
+      <RecurringEventField defaultChecked={event.recurrenceType === "weekly"} />
       <AppCurrencyField label="Preço" name="price" defaultCents={event.priceCents} />
       <label className="block">
         <span className="text-sm font-semibold">Descrição</span>
@@ -1186,6 +1192,27 @@ function Field({
         defaultValue={defaultValue}
         className="mt-1.5 h-12 w-full rounded-2xl border border-border bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground"
       />
+    </label>
+  );
+}
+
+function RecurringEventField({ defaultChecked = false }: { defaultChecked?: boolean }) {
+  return (
+    <label className="flex items-start gap-3 rounded-2xl border border-border p-3">
+      <input
+        type="checkbox"
+        name="recurrenceType"
+        value="weekly"
+        defaultChecked={defaultChecked}
+        className="mt-1 h-4 w-4 rounded border-border accent-primary"
+      />
+      <span>
+        <span className="block text-sm font-bold">Repetir toda semana</span>
+        <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+          Usa o mesmo dia e horário da data escolhida. O evento encerra após 24h e volta na próxima
+          semana.
+        </span>
+      </span>
     </label>
   );
 }

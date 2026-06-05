@@ -1,6 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql, type SqlClient, uniqueSlug } from "./db";
-import { EVENT_ACTIVE_WINDOW_HOURS } from "./event-time";
+import {
+  EVENT_ACTIVE_WINDOW_HOURS,
+  getWeeklyRecurrenceParts,
+  type EventRecurrenceType,
+} from "./event-time";
 import { getOptionalAuthenticatedUserId, requireAuthenticatedUserId } from "./server-auth";
 import { fetchWithTimeout, timeoutMessage } from "./timeout";
 
@@ -29,6 +33,9 @@ export interface EventSummary {
   checkedIn?: boolean;
   reward?: VenueReward | null;
   attendees: UserAvatarSummary[];
+  recurrenceType: EventRecurrenceType;
+  recurrenceWeekday?: number;
+  recurrenceTime?: string;
 }
 
 export interface UserAvatarSummary {
@@ -241,6 +248,7 @@ type CreateEventInput = {
   startsAt: string;
   priceCents?: number;
   imageUrl: string;
+  recurrenceType?: EventRecurrenceType;
 };
 
 type UpdateEventInput = {
@@ -252,6 +260,7 @@ type UpdateEventInput = {
   startsAt: string;
   priceCents?: number;
   imageUrl?: string;
+  recurrenceType?: EventRecurrenceType;
 };
 
 type OwnerEventActionInput = {
@@ -338,6 +347,21 @@ const currencyFormatter = new Intl.NumberFormat("pt-BR", {
 
 const eventActiveWindowInterval = `${EVENT_ACTIVE_WINDOW_HOURS} hours`;
 
+function normalizeRecurrence(type?: EventRecurrenceType, startsAt?: string) {
+  if (type !== "weekly") {
+    return { recurrenceType: "none" as const, recurrenceWeekday: null, recurrenceTime: null };
+  }
+
+  const parts = startsAt ? getWeeklyRecurrenceParts(startsAt) : null;
+  if (!parts) throw new Error("Informe uma data válida para repetir semanalmente.");
+
+  return {
+    recurrenceType: "weekly" as const,
+    recurrenceWeekday: parts.weekday,
+    recurrenceTime: parts.time,
+  };
+}
+
 function formatEventDate(value: string | Date) {
   const date = new Date(value);
   const [day, month] = monthFormatter.format(date).replace(".", "").split(" de ");
@@ -366,6 +390,8 @@ function mapReward(row: Record<string, unknown> | undefined): VenueReward | null
 }
 
 function mapEvent(row: Record<string, unknown>, saved = false, checkedIn = false): EventSummary {
+  const recurrenceType = String(row.recurrence_type ?? "none") as EventRecurrenceType;
+
   return {
     id: String(row.id),
     venueId: String(row.venue_id),
@@ -391,6 +417,9 @@ function mapEvent(row: Record<string, unknown>, saved = false, checkedIn = false
     checkedIn,
     reward: mapReward(row),
     attendees: mapAttendees(row.attendees),
+    recurrenceType,
+    recurrenceWeekday: row.recurrence_weekday == null ? undefined : Number(row.recurrence_weekday),
+    recurrenceTime: row.recurrence_time ? String(row.recurrence_time) : undefined,
   };
 }
 
@@ -584,6 +613,20 @@ async function ensureEventReviewsSchema(_sql: SqlClient) {
   return;
 }
 
+async function ensureEventsRecurrenceSchema(sql: SqlClient) {
+  await sql`
+    ALTER TABLE public.events
+    ADD COLUMN IF NOT EXISTS recurrence_type text NOT NULL DEFAULT 'none',
+    ADD COLUMN IF NOT EXISTS recurrence_weekday integer,
+    ADD COLUMN IF NOT EXISTS recurrence_time time
+  `;
+
+  await sql`
+    ALTER TABLE public.checkins
+    ADD COLUMN IF NOT EXISTS occurrence_starts_at timestamp with time zone
+  `;
+}
+
 function mapVenue(row: Record<string, unknown>): VenueSummary {
   return {
     id: String(row.id),
@@ -623,10 +666,18 @@ async function getEventById(sql: SqlClient, eventId: string) {
       e.category,
       e.description,
       e.created_at,
-      e.starts_at,
+      occurrence.starts_at AS starts_at,
+      e.recurrence_type,
+      e.recurrence_weekday,
+      e.recurrence_time,
       e.price_cents,
       e.confirmed_count,
-      (SELECT COUNT(DISTINCT c.user_id)::int FROM public.checkins c WHERE c.event_id = e.id) AS attendee_count,
+      (
+        SELECT COUNT(DISTINCT c.user_id)::int
+        FROM public.checkins c
+        WHERE c.event_id = e.id
+          AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
+      ) AS attendee_count,
       COALESCE((
         SELECT jsonb_agg(
           jsonb_build_object('userId', attendee.user_id, 'name', attendee.display_name, 'avatarUrl', attendee.avatar_url)
@@ -637,17 +688,36 @@ async function getEventById(sql: SqlClient, eventId: string) {
           FROM public.checkins c
           LEFT JOIN public.user_profiles up ON up.user_id = c.user_id
           WHERE c.event_id = e.id
+            AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
           ORDER BY c.created_at DESC
           LIMIT 3
         ) attendee
       ), '[]'::jsonb) AS attendees,
         e.image_url,
-        (e.status = 'published' AND e.starts_at <= now() AND e.starts_at >= now() - interval '6 hours') AS is_live,
+        (e.status = 'published' AND occurrence.starts_at <= now() AND occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval) AS is_live,
         v.name AS venue_name,
         v.neighborhood,
         v.address,
         v.category AS venue_category
     FROM public.events e
+    CROSS JOIN LATERAL (
+      SELECT CASE
+        WHEN e.recurrence_type = 'weekly' THEN
+          CASE
+            WHEN date_trunc('day', now())
+              + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+              + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+            THEN date_trunc('day', now())
+              + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+              + e.recurrence_time
+            ELSE date_trunc('day', now())
+              + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+              + e.recurrence_time
+              + interval '7 days'
+          END
+        ELSE e.starts_at
+      END AS starts_at
+    ) occurrence
     JOIN public.venues v ON v.id = e.venue_id
     WHERE e.id = ${eventId}
     LIMIT 1
@@ -660,6 +730,7 @@ export const getEvents = createServerFn({ method: "GET" }).handler(
   async (): Promise<EventSummary[]> => {
     const sql = await getSql();
     if (!sql) return [];
+    await ensureEventsRecurrenceSchema(sql);
 
     const rows = await sql`
       SELECT
@@ -669,10 +740,18 @@ export const getEvents = createServerFn({ method: "GET" }).handler(
         e.category,
         e.description,
         e.created_at,
-        e.starts_at,
+        occurrence.starts_at AS starts_at,
+        e.recurrence_type,
+        e.recurrence_weekday,
+        e.recurrence_time,
         e.price_cents,
         e.confirmed_count,
-        (SELECT COUNT(DISTINCT c.user_id)::int FROM public.checkins c WHERE c.event_id = e.id) AS attendee_count,
+        (
+          SELECT COUNT(DISTINCT c.user_id)::int
+          FROM public.checkins c
+          WHERE c.event_id = e.id
+            AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
+        ) AS attendee_count,
         COALESCE((
           SELECT jsonb_agg(
             jsonb_build_object('userId', attendee.user_id, 'name', attendee.display_name, 'avatarUrl', attendee.avatar_url)
@@ -683,12 +762,13 @@ export const getEvents = createServerFn({ method: "GET" }).handler(
             FROM public.checkins c
             LEFT JOIN public.user_profiles up ON up.user_id = c.user_id
             WHERE c.event_id = e.id
+              AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
             ORDER BY c.created_at DESC
             LIMIT 3
           ) attendee
         ), '[]'::jsonb) AS attendees,
         e.image_url,
-        (e.starts_at <= now() AND e.starts_at >= now() - interval '6 hours') AS is_live,
+        (occurrence.starts_at <= now() AND occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval) AS is_live,
         v.name AS venue_name,
         v.neighborhood,
         v.address,
@@ -696,9 +776,27 @@ export const getEvents = createServerFn({ method: "GET" }).handler(
         v.latitude,
         v.longitude
       FROM public.events e
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN e.recurrence_type = 'weekly' THEN
+            CASE
+              WHEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+              THEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+              ELSE date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+                + interval '7 days'
+            END
+          ELSE e.starts_at
+        END AS starts_at
+      ) occurrence
       JOIN public.venues v ON v.id = e.venue_id
       WHERE e.status = 'published'
-      ORDER BY e.starts_at ASC
+      ORDER BY occurrence.starts_at ASC
     `;
 
     return rows.map((row) => mapEvent(row));
@@ -709,6 +807,7 @@ export const getVenues = createServerFn({ method: "GET" }).handler(
   async (): Promise<VenueSummary[]> => {
     const sql = await getSql();
     if (!sql) return [];
+    await ensureEventsRecurrenceSchema(sql);
     await ensureRewardsSchema(sql);
     await ensureVenueFollowersSchema(sql);
 
@@ -726,8 +825,8 @@ export const getVenues = createServerFn({ method: "GET" }).handler(
         v.cover_image_url,
         COUNT(DISTINCT e.id) FILTER (
           WHERE e.status = 'published'
-            AND e.starts_at <= now()
-            AND e.starts_at >= now() - interval '6 hours'
+            AND venue_occurrence.starts_at <= now()
+            AND venue_occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval
         ) AS live_events,
         COUNT(DISTINCT c.user_id) AS checkins,
         COUNT(DISTINCT fv.user_id) AS favorite_count,
@@ -742,6 +841,24 @@ export const getVenues = createServerFn({ method: "GET" }).handler(
         r.valid_until AS reward_valid_until
       FROM public.venues v
       LEFT JOIN public.events e ON e.venue_id = v.id
+      LEFT JOIN LATERAL (
+        SELECT CASE
+          WHEN e.recurrence_type = 'weekly' THEN
+            CASE
+              WHEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+              THEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+              ELSE date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+                + interval '7 days'
+            END
+          ELSE e.starts_at
+        END AS starts_at
+      ) venue_occurrence ON true
       LEFT JOIN public.checkins c ON c.venue_id = v.id
       LEFT JOIN public.favorite_venues fv ON fv.venue_id = v.id
       LEFT JOIN public.venue_followers vf ON vf.venue_id = v.id
@@ -788,13 +905,33 @@ export const getCheckedInEventIds = createServerFn({ method: "GET" })
 
     const sql = await getSql();
     if (!sql) return [] as string[];
+    await ensureEventsRecurrenceSchema(sql);
 
     const rows = await sql`
       SELECT c.event_id
       FROM public.checkins c
       JOIN public.events e ON e.id = c.event_id
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN e.recurrence_type = 'weekly' THEN
+            CASE
+              WHEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+              THEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+              ELSE date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+                + interval '7 days'
+            END
+          ELSE e.starts_at
+        END AS starts_at
+      ) occurrence
       WHERE c.user_id = ${userId}
         AND e.status = 'published'
+        AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
     `;
 
     return rows.map((row) => String(row.event_id));
@@ -826,6 +963,7 @@ export const getSavedEvents = createServerFn({ method: "GET" })
 
     const sql = await getSql();
     if (!sql) return [] as EventSummary[];
+    await ensureEventsRecurrenceSchema(sql);
 
     const rows = await sql`
       SELECT
@@ -835,10 +973,18 @@ export const getSavedEvents = createServerFn({ method: "GET" })
         e.category,
         e.description,
         e.created_at,
-        e.starts_at,
+        occurrence.starts_at AS starts_at,
+        e.recurrence_type,
+        e.recurrence_weekday,
+        e.recurrence_time,
         e.price_cents,
         e.confirmed_count,
-        (SELECT COUNT(DISTINCT c.user_id)::int FROM public.checkins c WHERE c.event_id = e.id) AS attendee_count,
+        (
+          SELECT COUNT(DISTINCT c.user_id)::int
+          FROM public.checkins c
+          WHERE c.event_id = e.id
+            AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
+        ) AS attendee_count,
         COALESCE((
           SELECT jsonb_agg(
             jsonb_build_object('userId', attendee.user_id, 'name', attendee.display_name, 'avatarUrl', attendee.avatar_url)
@@ -849,12 +995,13 @@ export const getSavedEvents = createServerFn({ method: "GET" })
             FROM public.checkins c
             LEFT JOIN public.user_profiles up ON up.user_id = c.user_id
             WHERE c.event_id = e.id
+              AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
             ORDER BY c.created_at DESC
             LIMIT 3
           ) attendee
         ), '[]'::jsonb) AS attendees,
         e.image_url,
-        (e.starts_at <= now() AND e.starts_at >= now() - interval '6 hours') AS is_live,
+        (occurrence.starts_at <= now() AND occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval) AS is_live,
         v.name AS venue_name,
         v.neighborhood,
         v.address,
@@ -863,10 +1010,28 @@ export const getSavedEvents = createServerFn({ method: "GET" })
         v.longitude
       FROM public.saved_events se
       JOIN public.events e ON e.id = se.event_id
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN e.recurrence_type = 'weekly' THEN
+            CASE
+              WHEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+              THEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+              ELSE date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+                + interval '7 days'
+            END
+          ELSE e.starts_at
+        END AS starts_at
+      ) occurrence
       JOIN public.venues v ON v.id = e.venue_id
       WHERE se.user_id = ${userId}
         AND e.status = 'published'
-      ORDER BY e.starts_at ASC
+      ORDER BY occurrence.starts_at ASC
     `;
 
     return rows.map((row) => mapEvent(row, true));
@@ -880,23 +1045,42 @@ export const getAgendaReminders = createServerFn({ method: "GET" })
 
     const sql = await getSql();
     if (!sql) return [];
+    await ensureEventsRecurrenceSchema(sql);
 
     const rows = await sql`
       SELECT
         e.id,
         e.title,
-        e.starts_at,
+        occurrence.starts_at AS starts_at,
         e.image_url,
         v.name AS venue_name,
         v.neighborhood
       FROM public.saved_events se
       JOIN public.events e ON e.id = se.event_id
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN e.recurrence_type = 'weekly' THEN
+            CASE
+              WHEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+              THEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+              ELSE date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+                + interval '7 days'
+            END
+          ELSE e.starts_at
+        END AS starts_at
+      ) occurrence
       JOIN public.venues v ON v.id = e.venue_id
       WHERE se.user_id = ${userId}
         AND e.status = 'published'
-        AND e.starts_at > now()
-        AND e.starts_at <= now() + interval '24 hours'
-      ORDER BY e.starts_at ASC
+        AND occurrence.starts_at > now()
+        AND occurrence.starts_at <= now() + interval '24 hours'
+      ORDER BY occurrence.starts_at ASC
       LIMIT 5
     `;
 
@@ -1021,9 +1205,10 @@ export const upsertEventReview = createServerFn({ method: "POST" })
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
     await ensureEventReviewsSchema(sql);
+    await ensureEventsRecurrenceSchema(sql);
 
     const checkins = await sql`
-      SELECT e.starts_at <= now() - interval '6 hours' AS review_available
+      SELECT COALESCE(c.occurrence_starts_at, e.starts_at) <= now() - ${eventActiveWindowInterval}::interval AS review_available
       FROM public.checkins c
       JOIN public.events e ON e.id = c.event_id
       WHERE c.user_id = ${userId}
@@ -1264,6 +1449,7 @@ export const getPostComposerEvents = createServerFn({ method: "GET" })
 
     const sql = await getSql();
     if (!sql) return [];
+    await ensureEventsRecurrenceSchema(sql);
 
     const rows = await sql`
       SELECT DISTINCT
@@ -1275,10 +1461,29 @@ export const getPostComposerEvents = createServerFn({ method: "GET" })
       FROM public.checkins c
       JOIN public.events e ON e.id = c.event_id
       JOIN public.venues v ON v.id = e.venue_id
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN e.recurrence_type = 'weekly' THEN
+            CASE
+              WHEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+              THEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+              ELSE date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+                + interval '7 days'
+            END
+          ELSE e.starts_at
+        END AS starts_at
+      ) occurrence
       WHERE c.user_id = ${userId}
         AND e.status = 'published'
-        AND e.starts_at <= now()
-        AND e.starts_at >= now() - interval '6 hours'
+        AND occurrence.starts_at <= now()
+        AND occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval
+        AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
       ORDER BY e.title ASC
     `;
 
@@ -1310,17 +1515,37 @@ export const createUserPost = createServerFn({ method: "POST" })
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
     await ensurePostsSchema(sql);
+    await ensureEventsRecurrenceSchema(sql);
     await ensurePostAuthorProfile(sql, userId, data.authorName, data.authorAvatarUrl);
 
     const events = await sql`
       SELECT e.id, e.venue_id
       FROM public.checkins c
       JOIN public.events e ON e.id = c.event_id
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN e.recurrence_type = 'weekly' THEN
+            CASE
+              WHEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+              THEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+              ELSE date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+                + interval '7 days'
+            END
+          ELSE e.starts_at
+        END AS starts_at
+      ) occurrence
       WHERE c.user_id = ${userId}
         AND e.id = ${data.eventId}
         AND e.status = 'published'
-        AND e.starts_at <= now()
-        AND e.starts_at >= now() - interval '6 hours'
+        AND occurrence.starts_at <= now()
+        AND occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval
+        AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
       LIMIT 1
     `;
     const event = events[0];
@@ -1497,6 +1722,7 @@ export const getEventDetails = createServerFn({ method: "GET" })
     const userId = await getOptionalAuthenticatedUserId(data.userId);
     const sql = await getSql();
     if (!sql) return null;
+    await ensureEventsRecurrenceSchema(sql);
     await ensureRewardsSchema(sql);
     await ensureVenueFollowersSchema(sql);
 
@@ -1508,10 +1734,18 @@ export const getEventDetails = createServerFn({ method: "GET" })
         e.category,
         e.description,
         e.created_at,
-        e.starts_at,
+        occurrence.starts_at AS starts_at,
+        e.recurrence_type,
+        e.recurrence_weekday,
+        e.recurrence_time,
         e.price_cents,
         e.confirmed_count,
-        (SELECT COUNT(DISTINCT c.user_id)::int FROM public.checkins c WHERE c.event_id = e.id) AS attendee_count,
+        (
+          SELECT COUNT(DISTINCT c.user_id)::int
+          FROM public.checkins c
+          WHERE c.event_id = e.id
+            AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
+        ) AS attendee_count,
         COALESCE((
           SELECT jsonb_agg(
             jsonb_build_object('userId', attendee.user_id, 'name', attendee.display_name, 'avatarUrl', attendee.avatar_url)
@@ -1522,12 +1756,13 @@ export const getEventDetails = createServerFn({ method: "GET" })
             FROM public.checkins c
             LEFT JOIN public.user_profiles up ON up.user_id = c.user_id
             WHERE c.event_id = e.id
+              AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
             ORDER BY c.created_at DESC
             LIMIT 3
           ) attendee
         ), '[]'::jsonb) AS attendees,
         e.image_url,
-        (e.starts_at <= now() AND e.starts_at >= now() - interval '6 hours') AS is_live,
+        (occurrence.starts_at <= now() AND occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval) AS is_live,
         v.name AS venue_name,
         v.neighborhood,
         v.address,
@@ -1553,8 +1788,27 @@ export const getEventDetails = createServerFn({ method: "GET" })
           FROM public.checkins c
           WHERE c.event_id = e.id
             AND c.user_id = ${userId ?? ""}
+            AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
         ) AS checked_in
       FROM public.events e
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN e.recurrence_type = 'weekly' THEN
+            CASE
+              WHEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+              THEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+              ELSE date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+                + interval '7 days'
+            END
+          ELSE e.starts_at
+        END AS starts_at
+      ) occurrence
       JOIN public.venues v ON v.id = e.venue_id
       LEFT JOIN LATERAL (
         SELECT *
@@ -1579,6 +1833,7 @@ export const getVenueDetails = createServerFn({ method: "GET" })
     const userId = await getOptionalAuthenticatedUserId(data.userId);
     const sql = await getSql();
     if (!sql) return null;
+    await ensureEventsRecurrenceSchema(sql);
     await ensureRewardsSchema(sql);
 
     const venueRows = await sql`
@@ -1595,8 +1850,8 @@ export const getVenueDetails = createServerFn({ method: "GET" })
         v.cover_image_url,
         COUNT(DISTINCT e.id) FILTER (
           WHERE e.status = 'published'
-            AND e.starts_at <= now()
-            AND e.starts_at >= now() - interval '6 hours'
+            AND venue_occurrence.starts_at <= now()
+            AND venue_occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval
         ) AS live_events,
         COUNT(DISTINCT c.user_id) AS checkins,
         COUNT(DISTINCT fv.user_id) AS favorite_count,
@@ -1630,6 +1885,24 @@ export const getVenueDetails = createServerFn({ method: "GET" })
         ) AS checked_in
       FROM public.venues v
       LEFT JOIN public.events e ON e.venue_id = v.id
+      LEFT JOIN LATERAL (
+        SELECT CASE
+          WHEN e.recurrence_type = 'weekly' THEN
+            CASE
+              WHEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+              THEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+              ELSE date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+                + interval '7 days'
+            END
+          ELSE e.starts_at
+        END AS starts_at
+      ) venue_occurrence ON true
       LEFT JOIN public.checkins c ON c.venue_id = v.id
       LEFT JOIN public.favorite_venues fv ON fv.venue_id = v.id
       LEFT JOIN public.venue_followers vf ON vf.venue_id = v.id
@@ -1661,10 +1934,18 @@ export const getVenueDetails = createServerFn({ method: "GET" })
           e.category,
           e.description,
           e.created_at,
-          e.starts_at,
+          occurrence.starts_at AS starts_at,
+          e.recurrence_type,
+          e.recurrence_weekday,
+          e.recurrence_time,
           e.price_cents,
           e.confirmed_count,
-          (SELECT COUNT(DISTINCT c.user_id)::int FROM public.checkins c WHERE c.event_id = e.id) AS attendee_count,
+          (
+            SELECT COUNT(DISTINCT c.user_id)::int
+            FROM public.checkins c
+            WHERE c.event_id = e.id
+              AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
+          ) AS attendee_count,
           COALESCE((
             SELECT jsonb_agg(
               jsonb_build_object('userId', attendee.user_id, 'name', attendee.display_name, 'avatarUrl', attendee.avatar_url)
@@ -1675,12 +1956,13 @@ export const getVenueDetails = createServerFn({ method: "GET" })
               FROM public.checkins c
               LEFT JOIN public.user_profiles up ON up.user_id = c.user_id
               WHERE c.event_id = e.id
+                AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
               ORDER BY c.created_at DESC
               LIMIT 3
             ) attendee
           ), '[]'::jsonb) AS attendees,
           e.image_url,
-          (e.starts_at <= now() AND e.starts_at >= now() - interval '6 hours') AS is_live,
+          (occurrence.starts_at <= now() AND occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval) AS is_live,
           v.name AS venue_name,
           v.neighborhood,
           v.address,
@@ -1706,8 +1988,27 @@ export const getVenueDetails = createServerFn({ method: "GET" })
             FROM public.checkins c
             WHERE c.event_id = e.id
               AND c.user_id = ${userId ?? ""}
+              AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
           ) AS checked_in
         FROM public.events e
+        CROSS JOIN LATERAL (
+          SELECT CASE
+            WHEN e.recurrence_type = 'weekly' THEN
+              CASE
+                WHEN date_trunc('day', now())
+                  + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                  + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+                THEN date_trunc('day', now())
+                  + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                  + e.recurrence_time
+                ELSE date_trunc('day', now())
+                  + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                  + e.recurrence_time
+                  + interval '7 days'
+              END
+            ELSE e.starts_at
+          END AS starts_at
+        ) occurrence
         JOIN public.venues v ON v.id = e.venue_id
         LEFT JOIN LATERAL (
           SELECT *
@@ -1721,7 +2022,7 @@ export const getVenueDetails = createServerFn({ method: "GET" })
         ) r ON true
         WHERE e.venue_id = ${data.venueId}
           AND e.status = 'published'
-        ORDER BY e.starts_at ASC
+        ORDER BY occurrence.starts_at ASC
       `,
       sql`
         SELECT COUNT(*)::int AS count
@@ -1747,12 +2048,31 @@ export const toggleSavedEvent = createServerFn({ method: "POST" })
 
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
+    await ensureEventsRecurrenceSchema(sql);
 
     const eventRows = await sql`
-      SELECT starts_at > now() - ${eventActiveWindowInterval}::interval AS actions_available
-      FROM public.events
-      WHERE id = ${data.eventId}
-        AND status = 'published'
+      SELECT occurrence.starts_at > now() - ${eventActiveWindowInterval}::interval AS actions_available
+      FROM public.events e
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN e.recurrence_type = 'weekly' THEN
+            CASE
+              WHEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+              THEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+              ELSE date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+                + interval '7 days'
+            END
+          ELSE e.starts_at
+        END AS starts_at
+      ) occurrence
+      WHERE e.id = ${data.eventId}
+        AND e.status = 'published'
       LIMIT 1
     `;
     if (eventRows.length === 0) throw new Error("Evento não encontrado.");
@@ -1862,61 +2182,98 @@ export const toggleCheckin = createServerFn({ method: "POST" })
 
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
+    await ensureEventsRecurrenceSchema(sql);
 
     if (data.eventId) {
       const eventRows = await sql`
-        SELECT starts_at > now() - ${eventActiveWindowInterval}::interval AS actions_available
-        FROM public.events
-        WHERE id = ${data.eventId}
-          AND venue_id = ${data.venueId}
-          AND status = 'published'
+        SELECT
+          occurrence.starts_at,
+          occurrence.starts_at > now() - ${eventActiveWindowInterval}::interval AS actions_available
+        FROM public.events e
+        CROSS JOIN LATERAL (
+          SELECT CASE
+            WHEN e.recurrence_type = 'weekly' THEN
+              CASE
+                WHEN date_trunc('day', now())
+                  + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                  + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+                THEN date_trunc('day', now())
+                  + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                  + e.recurrence_time
+                ELSE date_trunc('day', now())
+                  + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                  + e.recurrence_time
+                  + interval '7 days'
+              END
+            ELSE e.starts_at
+          END AS starts_at
+        ) occurrence
+        WHERE e.id = ${data.eventId}
+          AND e.venue_id = ${data.venueId}
+          AND e.status = 'published'
         LIMIT 1
       `;
       if (eventRows.length === 0) throw new Error("Evento não encontrado.");
       if (!eventRows[0]?.actions_available) throw new Error("Check-in encerrado para esse evento.");
+
+      const occurrenceStartsAt = String(eventRows[0].starts_at);
+
+      const existing = await sql`
+        SELECT 1
+        FROM public.checkins
+        WHERE user_id = ${userId}
+          AND venue_id = ${data.venueId}
+          AND event_id = ${data.eventId}
+          AND occurrence_starts_at = ${occurrenceStartsAt}
+        LIMIT 1
+      `;
+
+      if (existing.length > 0) {
+        await sql`
+          DELETE FROM public.checkins
+          WHERE user_id = ${userId}
+            AND venue_id = ${data.venueId}
+            AND event_id = ${data.eventId}
+            AND occurrence_starts_at = ${occurrenceStartsAt}
+        `;
+
+        return { checkedIn: false };
+      }
+
+      await sql`
+        INSERT INTO public.checkins (user_id, venue_id, event_id, occurrence_starts_at)
+        VALUES (${userId}, ${data.venueId}, ${data.eventId}, ${occurrenceStartsAt})
+        ON CONFLICT (user_id, venue_id, event_id) DO UPDATE SET
+          occurrence_starts_at = EXCLUDED.occurrence_starts_at,
+          created_at = now()
+      `;
+
+      return { checkedIn: true };
     }
 
-    const existing = data.eventId
-      ? await sql`
-          SELECT 1
-          FROM public.checkins
-          WHERE user_id = ${userId}
-            AND venue_id = ${data.venueId}
-            AND event_id = ${data.eventId}
-          LIMIT 1
-        `
-      : await sql`
-          SELECT 1
-          FROM public.checkins
-          WHERE user_id = ${userId}
-            AND venue_id = ${data.venueId}
-            AND event_id IS NULL
-          LIMIT 1
-        `;
+    const existing = await sql`
+      SELECT 1
+      FROM public.checkins
+      WHERE user_id = ${userId}
+        AND venue_id = ${data.venueId}
+        AND event_id IS NULL
+      LIMIT 1
+    `;
 
     if (existing.length > 0) {
-      if (data.eventId) {
-        await sql`
-          DELETE FROM public.checkins
-          WHERE user_id = ${userId}
-            AND venue_id = ${data.venueId}
-            AND event_id = ${data.eventId}
-        `;
-      } else {
-        await sql`
-          DELETE FROM public.checkins
-          WHERE user_id = ${userId}
-            AND venue_id = ${data.venueId}
-            AND event_id IS NULL
-        `;
-      }
+      await sql`
+        DELETE FROM public.checkins
+        WHERE user_id = ${userId}
+          AND venue_id = ${data.venueId}
+          AND event_id IS NULL
+      `;
 
       return { checkedIn: false };
     }
 
     await sql`
       INSERT INTO public.checkins (user_id, venue_id, event_id)
-      VALUES (${userId}, ${data.venueId}, ${data.eventId ?? null})
+      VALUES (${userId}, ${data.venueId}, null)
       ON CONFLICT (user_id, venue_id, event_id) DO NOTHING
     `;
 
@@ -2126,6 +2483,9 @@ export const createEventForOwner = createServerFn({ method: "POST" })
 
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
+    await ensureEventsRecurrenceSchema(sql);
+
+    const recurrence = normalizeRecurrence(data.recurrenceType, data.startsAt);
 
     const venues = await sql`
       SELECT id
@@ -2148,6 +2508,9 @@ export const createEventForOwner = createServerFn({ method: "POST" })
         starts_at,
         price_cents,
         image_url,
+        recurrence_type,
+        recurrence_weekday,
+        recurrence_time,
         status
       )
       VALUES (
@@ -2159,6 +2522,9 @@ export const createEventForOwner = createServerFn({ method: "POST" })
         ${data.startsAt},
         ${data.priceCents ?? null},
         ${data.imageUrl},
+        ${recurrence.recurrenceType},
+        ${recurrence.recurrenceWeekday},
+        ${recurrence.recurrenceTime},
         'published'
       )
       RETURNING id
@@ -2178,6 +2544,9 @@ export const updateEventForOwner = createServerFn({ method: "POST" })
 
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
+    await ensureEventsRecurrenceSchema(sql);
+
+    const recurrence = normalizeRecurrence(data.recurrenceType, data.startsAt);
 
     const ownerRows = await sql`
       SELECT e.id
@@ -2198,6 +2567,9 @@ export const updateEventForOwner = createServerFn({ method: "POST" })
         starts_at = ${data.startsAt},
         price_cents = ${data.priceCents ?? null},
         image_url = COALESCE(${data.imageUrl ?? null}, image_url),
+        recurrence_type = ${recurrence.recurrenceType},
+        recurrence_weekday = ${recurrence.recurrenceWeekday},
+        recurrence_time = ${recurrence.recurrenceTime},
         updated_at = now()
       WHERE id = ${data.eventId}
     `;
@@ -2247,6 +2619,7 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
 
     const sql = await getSql();
     if (!sql) return empty;
+    await ensureEventsRecurrenceSchema(sql);
     await ensureRewardsSchema(sql);
     await ensureVenueUpdatesSchema(sql);
     await ensureEventReviewsSchema(sql);
@@ -2264,14 +2637,32 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
         v.cover_image_url,
         COUNT(DISTINCT e.id) FILTER (
           WHERE e.status = 'published'
-            AND e.starts_at <= now()
-            AND e.starts_at >= now() - interval '6 hours'
+            AND venue_occurrence.starts_at <= now()
+            AND venue_occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval
         ) AS live_events,
         COUNT(DISTINCT c.user_id) AS checkins,
         COUNT(DISTINCT fv.user_id) AS favorite_count,
         COUNT(DISTINCT vf.user_id) AS follower_count
       FROM public.venues v
       LEFT JOIN public.events e ON e.venue_id = v.id
+      LEFT JOIN LATERAL (
+        SELECT CASE
+          WHEN e.recurrence_type = 'weekly' THEN
+            CASE
+              WHEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+              THEN date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+              ELSE date_trunc('day', now())
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                + e.recurrence_time
+                + interval '7 days'
+            END
+          ELSE e.starts_at
+        END AS starts_at
+      ) venue_occurrence ON true
       LEFT JOIN public.checkins c ON c.venue_id = v.id
       LEFT JOIN public.favorite_venues fv ON fv.venue_id = v.id
       LEFT JOIN public.venue_followers vf ON vf.venue_id = v.id
@@ -2319,10 +2710,18 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
           e.category,
           e.description,
           e.created_at,
-          e.starts_at,
+          occurrence.starts_at AS starts_at,
+          e.recurrence_type,
+          e.recurrence_weekday,
+          e.recurrence_time,
           e.price_cents,
           e.confirmed_count,
-          (SELECT COUNT(DISTINCT c.user_id)::int FROM public.checkins c WHERE c.event_id = e.id) AS attendee_count,
+          (
+            SELECT COUNT(DISTINCT c.user_id)::int
+            FROM public.checkins c
+            WHERE c.event_id = e.id
+              AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
+          ) AS attendee_count,
           COALESCE((
             SELECT jsonb_agg(
               jsonb_build_object('userId', attendee.user_id, 'name', attendee.display_name, 'avatarUrl', attendee.avatar_url)
@@ -2333,12 +2732,13 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
               FROM public.checkins c
               LEFT JOIN public.user_profiles up ON up.user_id = c.user_id
               WHERE c.event_id = e.id
+                AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
               ORDER BY c.created_at DESC
               LIMIT 3
             ) attendee
           ), '[]'::jsonb) AS attendees,
           e.image_url,
-          (e.starts_at <= now() AND e.starts_at >= now() - interval '6 hours') AS is_live,
+          (occurrence.starts_at <= now() AND occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval) AS is_live,
           v.name AS venue_name,
           v.neighborhood,
           v.address,
@@ -2346,10 +2746,28 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
           v.latitude,
           v.longitude
         FROM public.events e
+        CROSS JOIN LATERAL (
+          SELECT CASE
+            WHEN e.recurrence_type = 'weekly' THEN
+              CASE
+                WHEN date_trunc('day', now())
+                  + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                  + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+                THEN date_trunc('day', now())
+                  + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                  + e.recurrence_time
+                ELSE date_trunc('day', now())
+                  + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                  + e.recurrence_time
+                  + interval '7 days'
+              END
+            ELSE e.starts_at
+          END AS starts_at
+        ) occurrence
         JOIN public.venues v ON v.id = e.venue_id
         WHERE e.venue_id = ${venue.id}
           AND e.status = 'published'
-        ORDER BY e.starts_at ASC
+        ORDER BY occurrence.starts_at ASC
         LIMIT 5
       `,
       sql`
