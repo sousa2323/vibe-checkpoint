@@ -564,7 +564,7 @@ function VenueDashboard() {
               placeholder="Selecione a categoria"
               options={EVENT_CATEGORY_OPTIONS}
             />
-            <AppDateTimeField label="Data e hora" name="startsAt" required />
+            <AppDateTimeField label="Primeira data e horário" name="startsAt" required />
             <RecurringEventField />
             <AppCurrencyField label="Preço" name="price" />
             <label className="block">
@@ -1136,7 +1136,7 @@ function EditEventPanel({
         options={EVENT_CATEGORY_OPTIONS}
       />
       <AppDateTimeField
-        label="Data e hora"
+        label="Primeira data e horário"
         name="startsAt"
         defaultValue={formatForDateTimeInput(event.startsAt)}
         required
@@ -1207,10 +1207,10 @@ function RecurringEventField({ defaultChecked = false }: { defaultChecked?: bool
         className="mt-1 h-4 w-4 rounded border-border accent-primary"
       />
       <span>
-        <span className="block text-sm font-bold">Repetir toda semana</span>
+        <span className="block text-sm font-bold">Repetir semanalmente neste dia da semana</span>
         <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-          Usa o mesmo dia e horário da data escolhida. O evento encerra após 24h e volta na próxima
-          semana.
+          A data acima define o dia da semana e o horário. Se escolher sexta às 20h, o evento volta
+          toda sexta às 20h e encerra após 24h.
         </span>
       </span>
     </label>
