@@ -79,6 +79,7 @@ function useSession() {
 }
 
 export const authClient = {
+  getSession: getCurrentSession,
   useSession,
   signIn: {
     email: async ({ email, password }: { email: string; password: string }) => {

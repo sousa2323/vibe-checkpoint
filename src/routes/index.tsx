@@ -113,7 +113,7 @@ function WebLanding() {
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-background text-foreground">
+    <main className="landing-light min-h-screen overflow-hidden bg-background text-foreground">
       <section className="landing-canvas relative mx-auto min-h-screen w-full max-w-[92rem] px-4 pb-16 pt-4 sm:px-6 lg:px-8">
         <div className="landing-page-glow landing-page-glow-left" />
         <div className="landing-page-glow landing-page-glow-right" />

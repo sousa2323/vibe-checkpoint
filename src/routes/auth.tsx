@@ -120,14 +120,14 @@ function Auth() {
                 className={cn(
                   "flex min-h-24 items-start gap-3 rounded-2xl border p-4 text-left transition-all",
                   accountType === "explorer"
-                    ? "border-ink bg-ink text-white shadow-sm"
+                    ? "border-primary bg-primary/10 text-foreground shadow-sm ring-2 ring-primary/25"
                     : "border-border bg-muted/40 text-foreground hover:bg-muted",
                 )}
               >
                 <span
                   className={cn(
                     "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-                    accountType === "explorer" ? "bg-white/15" : "bg-background",
+                    accountType === "explorer" ? "bg-primary text-white" : "bg-background",
                   )}
                 >
                   <MapPin className="h-4 w-4" />
@@ -137,7 +137,7 @@ function Auth() {
                   <span
                     className={cn(
                       "mt-1 block text-xs leading-snug",
-                      accountType === "explorer" ? "text-white/70" : "text-muted-foreground",
+                      accountType === "explorer" ? "text-foreground/70" : "text-muted-foreground",
                     )}
                   >
                     Encontre bares, eventos ao vivo e rolês perto de você.
@@ -152,14 +152,14 @@ function Auth() {
                 className={cn(
                   "flex min-h-24 items-start gap-3 rounded-2xl border p-4 text-left transition-all",
                   accountType === "owner"
-                    ? "border-ink bg-ink text-white shadow-sm"
+                    ? "border-primary bg-primary/10 text-foreground shadow-sm ring-2 ring-primary/25"
                     : "border-border bg-muted/40 text-foreground hover:bg-muted",
                 )}
               >
                 <span
                   className={cn(
                     "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-                    accountType === "owner" ? "bg-white/15" : "bg-background",
+                    accountType === "owner" ? "bg-primary text-white" : "bg-background",
                   )}
                 >
                   <Store className="h-4 w-4" />
@@ -169,7 +169,7 @@ function Auth() {
                   <span
                     className={cn(
                       "mt-1 block text-xs leading-snug",
-                      accountType === "owner" ? "text-white/70" : "text-muted-foreground",
+                      accountType === "owner" ? "text-foreground/70" : "text-muted-foreground",
                     )}
                   >
                     Divulgue seu local, publique eventos e acompanhe check-ins.

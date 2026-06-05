@@ -30,9 +30,11 @@ import {
   type PrivacyRequestSummary,
   updatePrivacyRequestStatus,
 } from "@/lib/admin-actions";
+import { requireAuthenticatedRoute } from "@/lib/route-guards";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin")({
+  beforeLoad: requireAuthenticatedRoute,
   component: AdminPage,
 });
 

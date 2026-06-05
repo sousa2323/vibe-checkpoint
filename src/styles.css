@@ -360,6 +360,28 @@
 }
 
 /* Web landing */
+.landing-light {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.05 0 0);
+  --ink: oklch(0.05 0 0);
+  --surface: oklch(0.951 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.05 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.05 0 0);
+  --primary: oklch(0.645 0.215 17.5);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.05 0 0);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.951 0 0);
+  --muted-foreground: oklch(0.56 0 0);
+  --accent: oklch(0.951 0 0);
+  --accent-foreground: oklch(0.05 0 0);
+  --border: oklch(0.92 0 0);
+  --input: oklch(0.92 0 0);
+  --ring: oklch(0.645 0.215 17.5);
+}
+
 .landing-canvas {
   isolation: isolate;
 }

@@ -86,6 +86,16 @@ export const requestAccountDeletion = createServerFn({ method: "POST" })
         resolved_at timestamptz
       )
     `;
+    await sql`ALTER TABLE public.privacy_requests ENABLE ROW LEVEL SECURITY`;
+    await sql`DROP POLICY IF EXISTS "No direct access to privacy requests" ON public.privacy_requests`;
+    await sql`
+      CREATE POLICY "No direct access to privacy requests"
+        ON public.privacy_requests
+        FOR ALL
+        USING (false)
+        WITH CHECK (false)
+    `;
+    await sql`REVOKE ALL ON TABLE public.privacy_requests FROM anon, authenticated`;
 
     const rows = await sql`
       INSERT INTO public.privacy_requests (user_id, request_type, email, reason, status)

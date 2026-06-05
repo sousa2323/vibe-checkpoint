@@ -30,9 +30,11 @@ import { uploadMedia } from "@/lib/media";
 import type { Coordinates } from "@/lib/location";
 import { searchLocation, type LocationLookupResult } from "@/lib/data";
 import { createOrUpdateVenueForOwner, getOwnerVenueForOnboarding } from "@/lib/profile-actions";
+import { requireAuthenticatedRoute } from "@/lib/route-guards";
 import { timeoutMessage, withTimeout } from "@/lib/timeout";
 
 export const Route = createFileRoute("/venue-onboarding")({
+  beforeLoad: requireAuthenticatedRoute,
   component: VenueOnboarding,
 });
 

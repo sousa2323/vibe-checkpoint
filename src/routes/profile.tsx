@@ -51,10 +51,12 @@ import {
   type UserProfileSummary,
   updateExplorerProfile,
 } from "@/lib/profile-actions";
+import { requireAuthenticatedRoute } from "@/lib/route-guards";
 import { useAppTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/profile")({
+  beforeLoad: requireAuthenticatedRoute,
   component: Profile,
 });
 

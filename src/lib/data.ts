@@ -312,7 +312,7 @@ type CreateVenueUpdateInput = {
 };
 
 type CreateGroupPlanInput = {
-  userId?: string;
+  userId: string;
   title: string;
   description?: string;
   eventIds: string[];
@@ -1065,7 +1065,7 @@ function normalizeRating(value: number) {
 export const createGroupPlan = createServerFn({ method: "POST" })
   .inputValidator((data: CreateGroupPlanInput) => data)
   .handler(async ({ data }): Promise<GroupPlanSummary> => {
-    const userId = await getOptionalAuthenticatedUserId(data.userId);
+    const userId = await requireAuthenticatedUserId(data.userId);
     const title = data.title.trim();
     const description = data.description?.trim() ?? "";
     const eventIds = Array.from(new Set(data.eventIds.filter(Boolean))).slice(0, 4);

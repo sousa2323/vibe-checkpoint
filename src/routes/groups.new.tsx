@@ -8,9 +8,11 @@ import { NativeFeedback } from "@/components/native-feedback";
 import { PillButton } from "@/components/pill-button";
 import { createGroupPlan, getEvents, type EventSummary } from "@/lib/data";
 import { canEventAppearInGroupVoting } from "@/lib/event-time";
+import { requireAuthenticatedRoute } from "@/lib/route-guards";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/groups/new")({
+  beforeLoad: requireAuthenticatedRoute,
   loader: () => getEvents(),
   component: NewGroupPlanPage,
 });
@@ -50,13 +52,18 @@ function NewGroupPlanPage() {
       setStatus("Escolha de 2 a 4 eventos para o grupo votar.");
       return;
     }
+    if (!user?.id) {
+      setStatus("Entre na sua conta para criar um rolê em grupo.");
+      navigate({ to: "/auth" });
+      return;
+    }
 
     setSaving(true);
     setStatus("Criando rolê...");
     try {
       const plan = await createPlan({
         data: {
-          userId: user?.id,
+          userId: user.id,
           title,
           description,
           eventIds: selectedIds,

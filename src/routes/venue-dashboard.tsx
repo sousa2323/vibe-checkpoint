@@ -47,8 +47,10 @@ import {
 import { fileToBase64, validateImageFile } from "@/lib/file";
 import { parseCurrencyToCents } from "@/lib/currency";
 import { uploadMedia } from "@/lib/media";
+import { requireAuthenticatedRoute } from "@/lib/route-guards";
 
 export const Route = createFileRoute("/venue-dashboard")({
+  beforeLoad: requireAuthenticatedRoute,
   component: VenueDashboard,
 });
 
