@@ -1,9 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
+  AtSign,
   Building2,
   CalendarPlus,
   Camera,
+  CheckCircle2,
   Copy,
   Download,
   ExternalLink,
@@ -18,6 +20,7 @@ import {
   Sun,
   Trash2,
   UserRound,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -47,6 +50,7 @@ import { clearSavedLocationPreferences } from "@/lib/location";
 import { exportUserData, requestAccountDeletion } from "@/lib/privacy-actions";
 import {
   type AccountType,
+  checkUsernameAvailability,
   getUserProfile,
   type UserProfileSummary,
   updateExplorerProfile,
@@ -76,6 +80,7 @@ function Profile() {
   const { data, isPending } = authClient.useSession();
   const user = data?.user;
   const getProfile = useServerFn(getUserProfile);
+  const checkUsername = useServerFn(checkUsernameAvailability);
   const saveExplorerProfile = useServerFn(updateExplorerProfile);
   const loadDashboard = useServerFn(getOwnerDashboard);
   const loadActivityStats = useServerFn(getUserActivityStats);
@@ -96,6 +101,11 @@ function Profile() {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
+  const [editUsername, setEditUsername] = useState("");
+  const [usernameStatus, setUsernameStatus] = useState<{
+    state: "idle" | "checking" | "available" | "unavailable" | "invalid";
+    message: string;
+  }>({ state: "idle", message: "" });
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | undefined>();
   const [editError, setEditError] = useState<string | null>(null);
@@ -204,10 +214,61 @@ function Profile() {
   const displayName = isOwner
     ? (venue?.name ?? profile?.venueName ?? "Estabelecimento")
     : (profile?.displayName ?? authUserName ?? "Convidado");
+  const displayUsername = !isOwner ? profile?.username : undefined;
   const displayImage = isOwner ? venue?.image : (profile?.avatarUrl ?? getUserImage(user));
+
+  useEffect(() => {
+    if (!isEditing || isOwner || !user?.id) {
+      setUsernameStatus({ state: "idle", message: "" });
+      return;
+    }
+
+    const normalizedUsername = formatExplorerUsername(editUsername);
+    if (!normalizedUsername) {
+      setUsernameStatus({ state: "idle", message: "" });
+      return;
+    }
+
+    if (normalizedUsername.length < 3) {
+      setUsernameStatus({ state: "invalid", message: "Use pelo menos 3 caracteres." });
+      return;
+    }
+
+    if (normalizedUsername === profile?.username) {
+      setUsernameStatus({ state: "available", message: "Nome de usuário atual." });
+      return;
+    }
+
+    let cancelled = false;
+    setUsernameStatus({ state: "checking", message: "Verificando disponibilidade..." });
+    const timeout = window.setTimeout(() => {
+      checkUsername({ data: { username: normalizedUsername, userId: user.id } })
+        .then((result) => {
+          if (cancelled) return;
+          setUsernameStatus({
+            state: result.available ? "available" : "unavailable",
+            message: result.message,
+          });
+        })
+        .catch((cause) => {
+          if (cancelled) return;
+          setUsernameStatus({
+            state: "invalid",
+            message: cause instanceof Error ? cause.message : "Nome de usuário inválido.",
+          });
+        });
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [checkUsername, editUsername, isEditing, isOwner, profile?.username, user?.id]);
 
   function openProfileEditor() {
     setEditName(displayName === "Convidado" ? "" : displayName);
+    setEditUsername(profile?.username ?? "");
+    setUsernameStatus({ state: "idle", message: "" });
     setAvatarFile(null);
     setAvatarPreview(displayImage);
     setEditError(null);
@@ -218,6 +279,7 @@ function Profile() {
     setIsEditing(false);
     setAvatarFile(null);
     setAvatarPreview(undefined);
+    setUsernameStatus({ state: "idle", message: "" });
     setEditError(null);
   }
 
@@ -236,8 +298,14 @@ function Profile() {
     if (!user?.id || saveState === "saving") return;
 
     const nextName = editName.trim();
+    const nextUsername = formatExplorerUsername(editUsername);
     if (nextName.length < 2) {
       setEditError("Informe um nome com pelo menos 2 caracteres.");
+      return;
+    }
+
+    if (nextUsername.length < 3) {
+      setEditError("Informe um nome de usuário com pelo menos 3 caracteres.");
       return;
     }
 
@@ -262,6 +330,7 @@ function Profile() {
         data: {
           userId: user.id,
           displayName: nextName,
+          username: nextUsername,
           avatarUrl,
         },
       });
@@ -406,6 +475,7 @@ function Profile() {
         <ProfileHero
           isOwner={isOwner}
           name={displayName}
+          username={displayUsername}
           image={displayImage}
           email={user?.email}
           venue={venue}
@@ -468,6 +538,38 @@ function Profile() {
               </span>
             </label>
 
+            <label className="mt-4 block">
+              <span className="text-sm font-bold">Nome de usuário</span>
+              <span className="mt-2 flex items-center gap-3 rounded-2xl bg-background px-4 py-3">
+                <AtSign className="h-4 w-4 text-muted-foreground" />
+                <input
+                  value={editUsername}
+                  onChange={(event) =>
+                    setEditUsername(formatExplorerUsername(event.currentTarget.value))
+                  }
+                  placeholder="seuusuario"
+                  className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-muted-foreground"
+                />
+                {usernameStatus.state === "available" ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                ) : usernameStatus.state === "unavailable" || usernameStatus.state === "invalid" ? (
+                  <XCircle className="h-4 w-4 text-primary" />
+                ) : null}
+              </span>
+              <span
+                className={cn(
+                  "mt-2 block text-xs font-semibold",
+                  usernameStatus.state === "available"
+                    ? "text-emerald-600"
+                    : usernameStatus.state === "unavailable" || usernameStatus.state === "invalid"
+                      ? "text-primary"
+                      : "text-muted-foreground",
+                )}
+              >
+                {usernameStatus.message || "Será usado como seu @ no ChegaAí."}
+              </span>
+            </label>
+
             {editError ? (
               <p className="mt-3 text-sm font-semibold text-primary">{editError}</p>
             ) : null}
@@ -518,7 +620,7 @@ function Profile() {
               <Row
                 icon={<UserRound className="h-4 w-4" />}
                 label="Editar perfil"
-                helper="Foto e nome que aparecem no app."
+                helper="Foto, nome e @ que aparecem no app."
                 onClick={openProfileEditor}
               />
               <Row
@@ -745,9 +847,18 @@ function Profile() {
   );
 }
 
+function formatExplorerUsername(value: string) {
+  return value
+    .replace(/^@+/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._]/g, "")
+    .slice(0, 30);
+}
+
 function ProfileHero({
   isOwner,
   name,
+  username,
   image,
   email,
   venue,
@@ -755,6 +866,7 @@ function ProfileHero({
 }: {
   isOwner: boolean;
   name: string;
+  username?: string;
   image?: string;
   email?: string;
   venue?: OwnerDashboard["venue"];
@@ -782,15 +894,13 @@ function ProfileHero({
                 {name}
               </h2>
               <p className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-white/70">
-                {isOwner ? (
-                  <Store className="h-3.5 w-3.5 shrink-0" />
-                ) : (
-                  <UserRound className="h-3.5 w-3.5 shrink-0" />
-                )}
+                {isOwner ? <Store className="h-3.5 w-3.5 shrink-0" /> : null}
                 <span className="truncate">
                   {isOwner
                     ? (venue?.neighborhood ?? venue?.city ?? "Gerencie sua presença no app")
-                    : (email ?? "Salve eventos e registre seus rolês")}
+                    : username
+                      ? `@${username}`
+                      : (email ?? "Salve eventos e registre seus rolês")}
                 </span>
               </p>
             </div>

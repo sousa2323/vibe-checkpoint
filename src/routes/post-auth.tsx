@@ -49,6 +49,16 @@ function getMetadataAccountType(user: unknown): AccountType {
   return toAccountType(metadataRecord.account_type ?? metadataRecord.accountType);
 }
 
+function getMetadataUsername(user: unknown) {
+  if (!user || typeof user !== "object" || !("user_metadata" in user)) return undefined;
+
+  const metadata = user.user_metadata;
+  if (!metadata || typeof metadata !== "object") return undefined;
+
+  const username = (metadata as Record<string, unknown>).username;
+  return typeof username === "string" ? username : undefined;
+}
+
 function getRequestedAccountType(user: unknown): AccountType {
   const requestedTypes = [
     getUrlAccountType(),
@@ -97,6 +107,7 @@ function PostAuth() {
       setError(null);
       setMessage("Encontrando seu perfil no ChegaAí...");
       const authUserName = getAuthUserName(currentUser);
+      const authUsername = getMetadataUsername(currentUser);
       try {
         localStorage.setItem("chegaai:onboarded", "1");
       } catch {
@@ -141,6 +152,7 @@ function PostAuth() {
           userId: currentUser.id,
           accountType: "explorer",
           displayName: authUserName,
+          username: authUsername,
           onboardingCompleted: true,
         },
       });

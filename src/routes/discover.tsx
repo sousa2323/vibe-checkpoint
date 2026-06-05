@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { LocateFixed, MapPin, Search, UsersRound } from "lucide-react";
+import { LocateFixed, Search, UsersRound } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { authClient, getAuthUserName } from "@/auth";
 import { BottomNav } from "@/components/bottom-nav";
@@ -96,7 +96,6 @@ function Discover() {
   const checkin = useServerFn(toggleCheckin);
   const likePost = useServerFn(togglePostLike);
   const [search, setSearch] = useState("");
-  const [locationInput, setLocationInput] = useState("");
   const [location, setLocation] = useState<Coordinates | null>(null);
   const [locationLabel, setLocationLabel] = useState("Brasil");
   const [locating, setLocating] = useState(false);
@@ -109,7 +108,7 @@ function Discover() {
   const [commentsPostId, setCommentsPostId] = useState<string | undefined>();
   const [status, setStatus] = useState<string | null>(null);
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
-  const locationInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user?.id) {
@@ -265,50 +264,6 @@ function Discover() {
     return [...eventItems, ...postItems].sort((a, b) => b.time - a.time);
   }, [filteredEvents, filteredPosts]);
 
-  async function handleCurrentLocation() {
-    setLocating(true);
-    try {
-      const current = await requestCurrentLocation();
-      setLocation(current);
-      const label = await reverseLocation({ data: current });
-      setLocationLabel(label ?? "Perto de você");
-      saveLocationConsent();
-      saveCurrentLocation(current, label ?? "Perto de você");
-      dismissLocationPrompt();
-      setShowLocationPrompt(false);
-      setStatus("Localização ativada. Eventos próximos primeiro.");
-    } catch (cause) {
-      setStatus(cause instanceof Error ? cause.message : "Não foi possível localizar você.");
-    } finally {
-      setLocating(false);
-    }
-  }
-
-  async function handleTypedLocation() {
-    const query = locationInput.trim();
-    if (!query) return;
-
-    setLocating(true);
-    try {
-      const result = await findLocation({ data: { query } });
-      if (!result) {
-        setStatus("Não encontrei essa região. Tente bairro, cidade ou endereço.");
-        return;
-      }
-
-      setLocation({ latitude: result.latitude, longitude: result.longitude });
-      setLocationLabel(result.label);
-      saveCurrentLocation({ latitude: result.latitude, longitude: result.longitude }, result.label);
-      dismissLocationPrompt();
-      setShowLocationPrompt(false);
-      setStatus("Região definida. Eventos próximos primeiro.");
-    } catch {
-      setStatus("Não foi possível buscar essa região agora.");
-    } finally {
-      setLocating(false);
-    }
-  }
-
   async function handleLocationPromptAllow() {
     setLocating(true);
     try {
@@ -338,7 +293,7 @@ function Discover() {
   function handleLocationPromptManualSearch() {
     dismissLocationPrompt();
     setShowLocationPrompt(false);
-    window.setTimeout(() => locationInputRef.current?.focus(), 0);
+    window.setTimeout(() => searchInputRef.current?.focus(), 0);
   }
 
   async function handleSmartSearch() {
@@ -462,12 +417,13 @@ function Discover() {
         <div className="flex h-12 items-center gap-2 rounded-full bg-muted px-4">
           <Search className="h-4 w-4 text-muted-foreground" />
           <input
+            ref={searchInputRef}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") void handleSmartSearch();
             }}
-            placeholder="Buscar endereço ou categoria"
+            placeholder="Buscar endereço, categoria ou local"
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
           {search ? (
@@ -479,43 +435,6 @@ function Discover() {
               Limpar
             </button>
           ) : null}
-        </div>
-
-        <div className="mt-3 rounded-3xl border border-border p-3">
-          <div className="flex gap-2">
-            <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-full bg-muted px-4">
-              <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <input
-                ref={locationInputRef}
-                value={locationInput}
-                onChange={(event) => setLocationInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") void handleTypedLocation();
-                }}
-                placeholder="Digite bairro ou endereço"
-                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleTypedLocation()}
-              disabled={locating}
-              className="rounded-full bg-muted px-4 text-xs font-bold text-foreground disabled:opacity-60"
-            >
-              Buscar
-            </button>
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void handleCurrentLocation()}
-              disabled={locating}
-              className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-primary px-3 text-xs font-bold text-white disabled:opacity-60"
-            >
-              <LocateFixed className="h-3.5 w-3.5" />
-              {locating ? "Localizando..." : "Usar minha localização"}
-            </button>
-          </div>
         </div>
       </div>
 

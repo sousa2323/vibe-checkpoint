@@ -47,6 +47,7 @@ export interface UserAvatarSummary {
 export interface VenueSummary {
   id: string;
   name: string;
+  category?: string;
   description?: string;
   neighborhood: string;
   city?: string;
@@ -631,6 +632,7 @@ function mapVenue(row: Record<string, unknown>): VenueSummary {
   return {
     id: String(row.id),
     name: String(row.name),
+    category: row.category ? String(row.category) : undefined,
     description: row.description ? String(row.description) : undefined,
     neighborhood: String(row.neighborhood),
     city: row.city ? String(row.city) : undefined,
@@ -815,6 +817,7 @@ export const getVenues = createServerFn({ method: "GET" }).handler(
       SELECT
         v.id,
         v.name,
+        v.category,
         v.description,
         v.neighborhood,
         v.city,
@@ -1404,7 +1407,7 @@ export const getFeedPosts = createServerFn({ method: "GET" })
       SELECT
         p.id,
         p.user_id,
-        COALESCE(up.display_name, 'Alguém por perto') AS author_name,
+        COALESCE(up.username, up.display_name, 'Alguém por perto') AS author_name,
         up.avatar_url AS author_avatar_url,
         p.venue_id,
         p.event_id,
@@ -1433,7 +1436,7 @@ export const getFeedPosts = createServerFn({ method: "GET" })
       LEFT JOIN public.user_post_media pm ON pm.post_id = p.id
       LEFT JOIN public.user_post_likes pl ON pl.post_id = p.id
       LEFT JOIN public.user_post_comments pc ON pc.post_id = p.id
-      GROUP BY p.id, up.display_name, up.avatar_url, v.id, e.id
+      GROUP BY p.id, up.username, up.display_name, up.avatar_url, v.id, e.id
       ORDER BY p.created_at DESC
       LIMIT 40
     `;
@@ -1575,7 +1578,7 @@ export const createUserPost = createServerFn({ method: "POST" })
       SELECT
         p.id,
         p.user_id,
-        COALESCE(up.display_name, 'Você') AS author_name,
+        COALESCE(up.username, up.display_name, 'Você') AS author_name,
         up.avatar_url AS author_avatar_url,
         p.venue_id,
         p.event_id,
@@ -1598,7 +1601,7 @@ export const createUserPost = createServerFn({ method: "POST" })
       LEFT JOIN public.user_profiles up ON up.user_id = p.user_id
       LEFT JOIN public.user_post_media pm ON pm.post_id = p.id
       WHERE p.id = ${postId}
-      GROUP BY p.id, up.display_name, up.avatar_url, v.id, e.id
+      GROUP BY p.id, up.username, up.display_name, up.avatar_url, v.id, e.id
       LIMIT 1
     `;
 
@@ -1671,7 +1674,7 @@ export const getPostComments = createServerFn({ method: "GET" })
         pc.id,
         pc.post_id,
         pc.user_id,
-        COALESCE(up.display_name, 'Alguém por perto') AS author_name,
+        COALESCE(up.username, up.display_name, 'Alguém por perto') AS author_name,
         up.avatar_url AS author_avatar_url,
         pc.body,
         pc.created_at
@@ -1703,7 +1706,7 @@ export const addPostComment = createServerFn({ method: "POST" })
     `;
 
     const authorRows = await sql`
-      SELECT COALESCE(display_name, 'Você') AS author_name, avatar_url AS author_avatar_url
+      SELECT COALESCE(username, display_name, 'Você') AS author_name, avatar_url AS author_avatar_url
       FROM public.user_profiles
       WHERE user_id = ${userId}
       LIMIT 1

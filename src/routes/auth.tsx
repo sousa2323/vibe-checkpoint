@@ -1,11 +1,13 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Eye, EyeOff, MapPin, Store } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { CheckCircle2, Eye, EyeOff, MapPin, Store, XCircle } from "lucide-react";
 import { type KeyboardEvent, useEffect, useState } from "react";
 import { authClient } from "@/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatAuthToastMessage } from "@/lib/auth-localization";
+import { checkUsernameAvailability } from "@/lib/profile-actions";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/auth")({
@@ -446,17 +448,70 @@ function SignupForm({
   accountType: AccountType;
   onSignedUp: () => Promise<void>;
 }) {
+  const checkUsername = useServerFn(checkUsernameAvailability);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [usernameStatus, setUsernameStatus] = useState<{
+    state: "idle" | "checking" | "available" | "unavailable" | "invalid";
+    message: string;
+  }>({ state: "idle", message: "" });
   const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  useEffect(() => {
+    if (accountType !== "explorer") {
+      setUsernameStatus({ state: "idle", message: "" });
+      return;
+    }
+
+    const normalizedUsername = formatExplorerUsername(username);
+    if (!normalizedUsername) {
+      setUsernameStatus({ state: "idle", message: "" });
+      return;
+    }
+
+    if (normalizedUsername.length < 3) {
+      setUsernameStatus({
+        state: "invalid",
+        message: "Use pelo menos 3 caracteres.",
+      });
+      return;
+    }
+
+    let cancelled = false;
+    setUsernameStatus({ state: "checking", message: "Verificando disponibilidade..." });
+    const timeout = window.setTimeout(() => {
+      checkUsername({ data: { username: normalizedUsername } })
+        .then((result) => {
+          if (cancelled) return;
+          setUsernameStatus({
+            state: result.available ? "available" : "unavailable",
+            message: result.message,
+          });
+        })
+        .catch((cause) => {
+          if (cancelled) return;
+          setUsernameStatus({
+            state: "invalid",
+            message: cause instanceof Error ? cause.message : "Nome de usuário inválido.",
+          });
+        });
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [accountType, checkUsername, username]);
+
   const submit = async () => {
     const trimmedEmail = email.trim();
     const trimmedName = name.trim();
+    const normalizedUsername = formatExplorerUsername(username);
     if (!trimmedEmail || !password) {
       setStatus("Informe email e senha para criar sua conta.");
       return;
@@ -468,9 +523,24 @@ function SignupForm({
     }
 
     setIsSubmitting(true);
-    setStatus("Criando conta...");
+    setStatus(accountType === "explorer" ? "Verificando nome de usuário..." : "Criando conta...");
 
     try {
+      if (accountType === "explorer") {
+        if (normalizedUsername.length < 3) {
+          setStatus("Informe um nome de usuário com pelo menos 3 caracteres.");
+          return;
+        }
+
+        const availability = await checkUsername({ data: { username: normalizedUsername } });
+        if (!availability.available) {
+          setUsernameStatus({ state: "unavailable", message: availability.message });
+          setStatus(availability.message);
+          return;
+        }
+      }
+
+      setStatus("Criando conta...");
       writeSignupIntent(accountType);
 
       const result = await authClient.signUp.email({
@@ -479,6 +549,7 @@ function SignupForm({
         options: {
           data: {
             name: trimmedName || undefined,
+            username: accountType === "explorer" ? normalizedUsername : undefined,
             account_type: accountType,
             accountType,
             legal_consent_version: legalConsentVersion,
@@ -550,6 +621,43 @@ function SignupForm({
           />
         </div>
 
+        {accountType === "explorer" ? (
+          <div className="grid gap-2">
+            <Label htmlFor="signup-username">Nome de usuário</Label>
+            <div className="flex items-center gap-2 rounded-md border border-input bg-background px-3 ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+              <span className="text-sm font-bold text-muted-foreground">@</span>
+              <input
+                id="signup-username"
+                name="username"
+                autoComplete="username"
+                placeholder="seuusuario"
+                value={username}
+                disabled={isSubmitting}
+                className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                onChange={(event) => setUsername(formatExplorerUsername(event.currentTarget.value))}
+                onKeyDown={submitOnEnter}
+              />
+              {usernameStatus.state === "available" ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              ) : usernameStatus.state === "unavailable" || usernameStatus.state === "invalid" ? (
+                <XCircle className="h-4 w-4 text-primary" />
+              ) : null}
+            </div>
+            <p
+              className={cn(
+                "text-xs font-semibold",
+                usernameStatus.state === "available"
+                  ? "text-emerald-600"
+                  : usernameStatus.state === "unavailable" || usernameStatus.state === "invalid"
+                    ? "text-primary"
+                    : "text-muted-foreground",
+              )}
+            >
+              {usernameStatus.message || "Será usado como seu @ no ChegaAí."}
+            </p>
+          </div>
+        ) : null}
+
         <div className="grid gap-2">
           <Label htmlFor="signup-password">Senha</Label>
           <div className="relative">
@@ -613,4 +721,12 @@ function SignupForm({
       </div>
     </div>
   );
+}
+
+function formatExplorerUsername(value: string) {
+  return value
+    .replace(/^@+/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._]/g, "")
+    .slice(0, 30);
 }

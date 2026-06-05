@@ -37,6 +37,7 @@ function MapView() {
   const [location, setLocation] = useState<Coordinates | null>(null);
   const [locationLabel, setLocationLabel] = useState("São Paulo, Brasil");
   const [locationInput, setLocationInput] = useState("");
+  const [activeVenueSearch, setActiveVenueSearch] = useState("");
   const [radiusKm, setRadiusKm] = useState(() => readSavedRadiusKm());
   const [savedRadiusKm, setSavedRadiusKm] = useState(() => readSavedRadiusKm());
   const [locating, setLocating] = useState(false);
@@ -87,9 +88,11 @@ function MapView() {
   }, [reverseLocation]);
 
   const rankedVenues = useMemo(() => {
+    const term = normalizeMapSearch(activeVenueSearch);
     return venues
       .map((venue) => enrichVenueDistance(venue, location))
       .filter((venue) => !location || venue.distanceKm == null || venue.distanceKm <= radiusKm)
+      .filter((venue) => !term || venueMatchesSearch(venue, term))
       .sort((a, b) => {
         if (!location) return movementScore(b) - movementScore(a);
         const byDistance =
@@ -97,7 +100,7 @@ function MapView() {
         if (Math.abs(byDistance) > 0.2) return byDistance;
         return movementScore(b) - movementScore(a);
       });
-  }, [location, radiusKm, venues]);
+  }, [activeVenueSearch, location, radiusKm, venues]);
   const hotVenues = rankedVenues.filter((venue) => movementLevel(venue) !== "calm");
   const mapCenter = mapCenterCoordinates(location, rankedVenues);
   const mapMarkers = useMemo(
@@ -123,9 +126,21 @@ function MapView() {
     }
   }
 
-  async function handleTypedLocation() {
+  async function handleMapSearch() {
     const query = locationInput.trim();
-    if (!query) return;
+    if (!query) {
+      setActiveVenueSearch("");
+      return;
+    }
+
+    const term = normalizeMapSearch(query);
+    const hasVenueMatch = venues.some((venue) => venueMatchesSearch(venue, term));
+    if (hasVenueMatch) {
+      setActiveVenueSearch(query);
+      setSelectedRoute(null);
+      setMessage("Locais filtrados no mapa.");
+      return;
+    }
 
     setLocating(true);
     try {
@@ -137,6 +152,7 @@ function MapView() {
 
       setLocation({ latitude: result.latitude, longitude: result.longitude });
       setSelectedRoute(null);
+      setActiveVenueSearch("");
       setLocationLabel(result.label);
       saveCurrentLocation({ latitude: result.latitude, longitude: result.longitude }, result.label);
       setMessage("Região definida no mapa.");
@@ -220,17 +236,20 @@ function MapView() {
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
               <input
                 value={locationInput}
-                onChange={(event) => setLocationInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") void handleTypedLocation();
+                onChange={(event) => {
+                  setLocationInput(event.target.value);
+                  if (!event.target.value.trim()) setActiveVenueSearch("");
                 }}
-                placeholder="Buscar bairro ou endereço"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void handleMapSearch();
+                }}
+                placeholder="Buscar endereço, categoria ou local"
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
             </div>
             <button
               type="button"
-              onClick={() => void handleTypedLocation()}
+              onClick={() => void handleMapSearch()}
               disabled={locating}
               className="rounded-full bg-muted px-4 text-xs font-bold text-foreground disabled:opacity-60"
             >
@@ -353,7 +372,7 @@ function MapView() {
       </section>
 
       <section className="mt-6 px-6">
-        <div className="relative h-80 overflow-hidden rounded-[2rem] bg-muted text-white shadow-[0_18px_45px_-30px_rgba(0,0,0,0.8)]">
+        <div className="relative isolate h-80 overflow-hidden rounded-[2rem] bg-muted text-white shadow-[0_18px_45px_-30px_rgba(0,0,0,0.8)]">
           <RealMap
             center={mapCenter}
             markers={mapMarkers}
@@ -527,6 +546,26 @@ function buildMapMarkers(
 
 function clampRadius(value: number) {
   return clampRadiusKm(value);
+}
+
+function normalizeMapSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function venueMatchesSearch(venue: VenueSummary, term: string) {
+  if (!term) return true;
+  return [
+    venue.name,
+    venue.category,
+    venue.neighborhood,
+    venue.city,
+    venue.address,
+    venue.description,
+  ].some((value) => normalizeMapSearch(value ?? "").includes(term));
 }
 
 async function fetchRoutePath(origin: Coordinates, destination: Coordinates) {

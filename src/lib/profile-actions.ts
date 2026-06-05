@@ -9,6 +9,7 @@ type SaveUserProfileInput = {
   userId: string;
   accountType: AccountType;
   displayName?: string;
+  username?: string;
   avatarUrl?: string;
   onboardingCompleted?: boolean;
 };
@@ -16,6 +17,7 @@ type SaveUserProfileInput = {
 type UpdateExplorerProfileInput = {
   userId: string;
   displayName: string;
+  username?: string;
   avatarUrl?: string;
 };
 
@@ -23,6 +25,7 @@ export type UserProfileSummary = {
   userId: string;
   accountType: AccountType;
   displayName?: string;
+  username?: string;
   avatarUrl?: string;
   onboardingCompleted: boolean;
   venueName?: string;
@@ -69,10 +72,45 @@ export type OwnerVenueOnboarding = {
   coverImageUrl?: string;
 };
 
+export type UsernameAvailability = {
+  username: string;
+  available: boolean;
+  message: string;
+};
+
+export const checkUsernameAvailability = createServerFn({ method: "GET" })
+  .inputValidator((data: { username: string; userId?: string }) => data)
+  .handler(async ({ data }): Promise<UsernameAvailability> => {
+    const username = normalizeUsername(data.username);
+    validateUsername(username);
+
+    const sql = await getSql();
+    if (!sql) throw new Error("DATABASE_URL não configurada.");
+    await ensureUserProfileSchema(sql);
+
+    const rows = await sql`
+      SELECT user_id
+      FROM public.user_profiles
+      WHERE lower(username) = lower(${username})
+      LIMIT 1
+    `;
+    const ownerUserId = rows[0]?.user_id ? String(rows[0].user_id) : null;
+    const available = !ownerUserId || ownerUserId === data.userId;
+
+    return {
+      username,
+      available,
+      message: available ? "Nome de usuário disponível." : "Esse nome de usuário já está em uso.",
+    };
+  });
+
 export const saveUserProfile = createServerFn({ method: "POST" })
   .inputValidator((data: SaveUserProfileInput) => data)
   .handler(async ({ data }) => {
     const userId = await requireAuthenticatedUserId(data.userId);
+    const username = data.accountType === "explorer" ? normalizeUsername(data.username) : undefined;
+    if (username) await ensureUsernameAvailable(username, userId);
+
     const sql = await getSql();
     if (!sql) return { persisted: false };
     await ensureUserProfileSchema(sql);
@@ -82,6 +120,7 @@ export const saveUserProfile = createServerFn({ method: "POST" })
         user_id,
         account_type,
         display_name,
+        username,
         avatar_url,
         onboarding_completed
       )
@@ -89,12 +128,14 @@ export const saveUserProfile = createServerFn({ method: "POST" })
         ${userId},
         ${data.accountType},
         ${data.displayName ?? null},
+        ${username ?? null},
         ${data.avatarUrl ?? null},
         ${data.onboardingCompleted ?? false}
       )
       ON CONFLICT (user_id) DO UPDATE SET
         account_type = EXCLUDED.account_type,
         display_name = COALESCE(EXCLUDED.display_name, public.user_profiles.display_name),
+        username = COALESCE(EXCLUDED.username, public.user_profiles.username),
         avatar_url = COALESCE(EXCLUDED.avatar_url, public.user_profiles.avatar_url),
         onboarding_completed = EXCLUDED.onboarding_completed,
         updated_at = now()
@@ -119,6 +160,7 @@ export const getUserProfile = createServerFn({ method: "GET" })
           up.user_id,
           up.account_type,
           up.display_name,
+          up.username,
           up.avatar_url,
           up.onboarding_completed,
           COALESCE(v.name, vcr.venue_name) AS venue_name,
@@ -150,6 +192,7 @@ export const getUserProfile = createServerFn({ method: "GET" })
         userId: String(row.user_id),
         accountType: String(row.account_type) === "owner" ? "owner" : "explorer",
         displayName: row.display_name ? String(row.display_name) : undefined,
+        username: row.username ? String(row.username) : undefined,
         avatarUrl: row.avatar_url ? String(row.avatar_url) : undefined,
         onboardingCompleted: Boolean(row.onboarding_completed),
         venueName: row.venue_name ? String(row.venue_name) : undefined,
@@ -168,6 +211,9 @@ export const updateExplorerProfile = createServerFn({ method: "POST" })
 
     const displayName = data.displayName.trim();
     if (displayName.length < 2) throw new Error("Informe um nome com pelo menos 2 caracteres.");
+    const username = normalizeUsername(data.username);
+    validateUsername(username);
+    await ensureUsernameAvailable(username, userId);
 
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
@@ -178,6 +224,7 @@ export const updateExplorerProfile = createServerFn({ method: "POST" })
         user_id,
         account_type,
         display_name,
+        username,
         avatar_url,
         onboarding_completed
       )
@@ -185,16 +232,18 @@ export const updateExplorerProfile = createServerFn({ method: "POST" })
         ${userId},
         'explorer',
         ${displayName},
+        ${username},
         ${data.avatarUrl ?? null},
         true
       )
       ON CONFLICT (user_id) DO UPDATE SET
         account_type = public.user_profiles.account_type,
         display_name = EXCLUDED.display_name,
+        username = EXCLUDED.username,
         avatar_url = COALESCE(EXCLUDED.avatar_url, public.user_profiles.avatar_url),
         onboarding_completed = public.user_profiles.onboarding_completed,
         updated_at = now()
-      RETURNING user_id, account_type, display_name, avatar_url, onboarding_completed
+      RETURNING user_id, account_type, display_name, username, avatar_url, onboarding_completed
     `;
 
     const row = rows[0];
@@ -203,6 +252,7 @@ export const updateExplorerProfile = createServerFn({ method: "POST" })
       userId: String(row.user_id),
       accountType,
       displayName: String(row.display_name),
+      username: row.username ? String(row.username) : undefined,
       avatarUrl: row.avatar_url ? String(row.avatar_url) : undefined,
       onboardingCompleted: Boolean(row.onboarding_completed),
     };
@@ -463,6 +513,42 @@ async function ensureVenueProfileSchema(_sql: Awaited<ReturnType<typeof getSql>>
 
 async function ensureUserProfileSchema(_sql: Awaited<ReturnType<typeof getSql>>) {
   return;
+}
+
+function normalizeUsername(value?: string) {
+  return (value ?? "")
+    .trim()
+    .replace(/^@+/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._]/g, "")
+    .slice(0, 30);
+}
+
+function validateUsername(username: string) {
+  if (username.length < 3)
+    throw new Error("Informe um nome de usuário com pelo menos 3 caracteres.");
+  if (!/^[a-z0-9._]{3,30}$/.test(username)) {
+    throw new Error("Use apenas letras, números, ponto ou underline.");
+  }
+}
+
+async function ensureUsernameAvailable(username: string, userId: string) {
+  validateUsername(username);
+
+  const sql = await getSql();
+  if (!sql) throw new Error("DATABASE_URL não configurada.");
+  await ensureUserProfileSchema(sql);
+
+  const rows = await sql`
+    SELECT user_id
+    FROM public.user_profiles
+    WHERE lower(username) = lower(${username})
+    LIMIT 1
+  `;
+  const ownerUserId = rows[0]?.user_id ? String(rows[0].user_id) : null;
+  if (ownerUserId && ownerUserId !== userId) {
+    throw new Error("Esse nome de usuário já está em uso.");
+  }
 }
 
 async function geocodeVenueAddress(data: SaveVenueClaimInput) {

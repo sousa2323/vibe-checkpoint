@@ -13,13 +13,19 @@ type FeedPostCardProps = {
 
 export function FeedPostCard({ post, onLike, onOpenComments }: FeedPostCardProps) {
   const photoUrls = Array.from(new Set(post.photoUrls));
+  const relativeTime = formatPostRelativeTime(post.createdAt);
 
   return (
     <article className="overflow-hidden rounded-[2rem] border border-border bg-card text-card-foreground shadow-[0_18px_50px_-30px_rgba(15,23,42,0.55)]">
       <div className="flex items-center gap-3 p-4">
         <UserAvatar name={post.authorName} imageUrl={post.authorAvatarUrl} className="h-11 w-11" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-black">{post.authorName}</p>
+          <p className="truncate text-sm">
+            <span className="font-black">{post.authorName}</span>
+            {relativeTime ? (
+              <span className="font-semibold text-muted-foreground"> · {relativeTime}</span>
+            ) : null}
+          </p>
           <Link
             to="/venues/$venueId"
             params={{ venueId: post.venueId }}
@@ -31,12 +37,13 @@ export function FeedPostCard({ post, onLike, onOpenComments }: FeedPostCardProps
               {post.venueName}, {post.venueNeighborhood}
             </span>
           </Link>
+          {post.eventTitle ? (
+            <div className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-extrabold text-primary">
+              <Sparkles className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">Curtindo {post.eventTitle}</span>
+            </div>
+          ) : null}
         </div>
-        {post.eventTitle ? (
-          <span className="rounded-full bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-primary">
-            Agora
-          </span>
-        ) : null}
       </div>
 
       {photoUrls.length > 0 ? (
@@ -89,8 +96,15 @@ export function FeedPostCard({ post, onLike, onOpenComments }: FeedPostCardProps
           </button>
         </div>
 
-        <div className="space-y-1 text-sm">
+        <div className="space-y-2 text-sm">
           <p className="font-black">{formatCount(post.likes, "curtida", "curtidas")}</p>
+
+          {post.caption ? (
+            <p className="leading-relaxed text-foreground">
+              <span className="font-black">{post.authorName}</span> {post.caption}
+            </p>
+          ) : null}
+
           <button
             type="button"
             onClick={onOpenComments}
@@ -101,15 +115,6 @@ export function FeedPostCard({ post, onLike, onOpenComments }: FeedPostCardProps
               : "Comentar"}
           </button>
         </div>
-
-        {post.eventTitle ? (
-          <div className="flex items-center gap-2 rounded-2xl bg-muted px-3 py-2 text-xs font-bold">
-            <Sparkles className="h-4 w-4 text-primary" />
-            Curtindo {post.eventTitle}
-          </div>
-        ) : null}
-
-        {post.caption ? <p className="text-sm leading-relaxed">{post.caption}</p> : null}
 
         {post.taggedPerson ? (
           <p className="text-xs font-bold text-muted-foreground">Com {post.taggedPerson}</p>
@@ -127,4 +132,28 @@ function formatCount(value: number, singular: string, plural: string) {
   }
 
   return `${value} ${label}`;
+}
+
+function formatPostRelativeTime(value: string) {
+  const createdAt = new Date(value).getTime();
+  if (Number.isNaN(createdAt)) return "";
+
+  const diffMs = Date.now() - createdAt;
+  const diffMinutes = Math.max(0, Math.floor(diffMs / 60_000));
+  if (diffMinutes < 1) return "agora";
+  if (diffMinutes < 60) return `${diffMinutes} min`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} h`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays} d`;
+
+  const diffWeeks = Math.floor(diffDays / 7);
+  if (diffWeeks < 5) return `${diffWeeks} sem`;
+
+  const diffMonths = Math.floor(diffDays / 30);
+  if (diffMonths < 12) return `${diffMonths} m`;
+
+  return `${Math.floor(diffDays / 365)} a`;
 }
