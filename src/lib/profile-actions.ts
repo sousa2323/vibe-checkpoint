@@ -108,7 +108,8 @@ export const saveUserProfile = createServerFn({ method: "POST" })
   .inputValidator((data: SaveUserProfileInput) => data)
   .handler(async ({ data }) => {
     const userId = await requireAuthenticatedUserId(data.userId);
-    const username = data.accountType === "explorer" ? normalizeUsername(data.username) : undefined;
+    const username =
+      data.accountType === "explorer" ? normalizeUsername(data.username) || undefined : undefined;
     if (username) await ensureUsernameAvailable(username, userId);
 
     const sql = await getSql();
