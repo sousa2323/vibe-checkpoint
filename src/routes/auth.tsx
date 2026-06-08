@@ -19,6 +19,24 @@ type AccountType = "explorer" | "owner";
 const publicAppOrigin = "https://vibe-checkpoint.vercel.app";
 const legalConsentVersion = "2026-06-02";
 
+function BrandLogo({ className }: { className: string }) {
+  return (
+    <>
+      <img
+        src="/img/logo_chegaai2.png"
+        alt="ChegaAí"
+        className={`${className} object-contain dark:hidden`}
+      />
+      <img
+        src="/img/logo_chegaai.png"
+        alt=""
+        aria-hidden="true"
+        className={`hidden ${className} object-contain dark:block`}
+      />
+    </>
+  );
+}
+
 function writeSignupIntent(accountType: AccountType) {
   try {
     localStorage.setItem("chegaai:auth-mode", "signup");
@@ -87,9 +105,7 @@ function Auth() {
   return (
     <main className="app-shell flex flex-col bg-background px-6 py-10">
       <div className="mb-8 flex flex-col items-center gap-3">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-ink text-xl font-black text-white">
-          C
-        </div>
+        <BrandLogo className="h-20 w-auto max-w-[4.25rem]" />
         <h1 className="text-2xl font-bold tracking-tight">Bem-vindo ao ChegaAí</h1>
         <p className="text-sm text-muted-foreground">Eventos e bares ao vivo, agora</p>
       </div>

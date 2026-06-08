@@ -38,6 +38,24 @@ const imageUrls = {
     "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=1200&q=80",
 };
 
+function BrandLogo({ className }: { className: string }) {
+  return (
+    <>
+      <img
+        src="/img/logo_chegaai2.png"
+        alt="ChegaAí"
+        className={`${className} object-contain dark:hidden`}
+      />
+      <img
+        src="/img/logo_chegaai.png"
+        alt=""
+        aria-hidden="true"
+        className={`hidden ${className} object-contain dark:block`}
+      />
+    </>
+  );
+}
+
 function Entry() {
   const [isNativeShell, setIsNativeShell] = useState(() =>
     typeof window === "undefined" ? false : nativeOrigins.has(window.location.origin),
@@ -86,8 +104,8 @@ function NativeSplash() {
       <div className="absolute inset-x-0 top-[-120px] mx-auto h-72 w-72 rounded-full bg-primary/15 blur-3xl" />
       <div className="absolute inset-x-8 bottom-16 h-24 rounded-full bg-foreground/5 blur-2xl" />
       <div className="flex flex-col items-center gap-4">
-        <div className="flex h-20 w-20 items-center justify-center rounded-[2rem] bg-primary text-3xl font-black text-white shadow-[0_18px_40px_rgba(241,58,90,0.28)]">
-          C
+        <div className="flex h-24 w-24 items-center justify-center rounded-[2rem] bg-background shadow-[0_18px_40px_rgba(241,58,90,0.24)] ring-1 ring-border">
+          <BrandLogo className="h-20 w-auto max-w-[4.75rem]" />
         </div>
         <h1 className="text-3xl font-black tracking-tight">ChegaAí</h1>
         <p className="text-sm text-muted-foreground">Preparando sua experiência...</p>
@@ -120,10 +138,15 @@ function WebLanding() {
 
         <header className="landing-nav-reveal relative z-40 mx-auto flex w-full max-w-3xl items-center justify-between rounded-full bg-white/90 p-2 shadow-[0_16px_54px_rgba(5,5,5,0.08)] ring-1 ring-ink/[0.06] backdrop-blur-xl">
           <a href="/" className="flex items-center gap-2 pl-1" aria-label="ChegaAí">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink text-sm font-black text-white">
-              C
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white ring-1 ring-ink/[0.08]">
+              <img
+                src="/img/logo_chegaai2.png"
+                alt=""
+                aria-hidden="true"
+                className="h-8 w-auto max-w-[1.6rem] object-contain"
+              />
             </span>
-            <span className="text-sm font-black tracking-tight">ChegaAí</span>
+            <span className="text-sm font-black tracking-tight text-primary">ChegaAí</span>
           </a>
           <nav className="hidden items-center gap-1 rounded-full bg-muted/80 p-1 text-xs font-black text-foreground/62 md:flex">
             <a
