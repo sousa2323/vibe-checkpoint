@@ -5,6 +5,48 @@ import { fetchWithTimeout, timeoutMessage } from "./timeout";
 
 export type AccountType = "explorer" | "owner";
 
+export type ExplorerPriceRange = "any" | "free" | "budget" | "premium";
+
+export type ExplorerPreferenceMood = "calm" | "live" | "crowded" | "date" | "group";
+
+export type ExplorerPreferences = {
+  neighborhoods: string[];
+  categories: string[];
+  maxDistanceKm: number;
+  priceRange: ExplorerPriceRange;
+  moods: ExplorerPreferenceMood[];
+};
+
+export type ExplorerPreferenceOptions = {
+  neighborhoods: string[];
+  categories: string[];
+};
+
+export const DEFAULT_EXPLORER_PREFERENCES: ExplorerPreferences = {
+  neighborhoods: [],
+  categories: [],
+  maxDistanceKm: 5,
+  priceRange: "any",
+  moods: [],
+};
+
+export const EMPTY_EXPLORER_PREFERENCE_OPTIONS: ExplorerPreferenceOptions = {
+  neighborhoods: [],
+  categories: [],
+};
+
+export function summarizeExplorerPreferences(preferences?: ExplorerPreferences) {
+  const value = preferences ?? DEFAULT_EXPLORER_PREFERENCES;
+  const parts = [
+    value.neighborhoods[0],
+    value.categories[0],
+    value.moods.length ? `${value.moods.length} climas` : null,
+    `${value.maxDistanceKm} km`,
+  ].filter(Boolean);
+
+  return parts.length ? parts.join(" · ") : "Bairros, estilos, clima e distância.";
+}
+
 type SaveUserProfileInput = {
   userId: string;
   accountType: AccountType;
@@ -28,6 +70,7 @@ export type UserProfileSummary = {
   username?: string;
   avatarUrl?: string;
   onboardingCompleted: boolean;
+  explorerPreferences: ExplorerPreferences;
   venueName?: string;
   businessRole?: string;
   neighborhood?: string;
@@ -164,6 +207,7 @@ export const getUserProfile = createServerFn({ method: "GET" })
           up.username,
           up.avatar_url,
           up.onboarding_completed,
+          up.explorer_preferences,
           COALESCE(v.name, vcr.venue_name) AS venue_name,
           vcr.business_role,
           COALESCE(v.neighborhood, vcr.neighborhood) AS neighborhood
@@ -196,6 +240,7 @@ export const getUserProfile = createServerFn({ method: "GET" })
         username: row.username ? String(row.username) : undefined,
         avatarUrl: row.avatar_url ? String(row.avatar_url) : undefined,
         onboardingCompleted: Boolean(row.onboarding_completed),
+        explorerPreferences: normalizeExplorerPreferences(row.explorer_preferences),
         venueName: row.venue_name ? String(row.venue_name) : undefined,
         businessRole: row.business_role ? String(row.business_role) : undefined,
         neighborhood: row.neighborhood ? String(row.neighborhood) : undefined,
@@ -256,7 +301,91 @@ export const updateExplorerProfile = createServerFn({ method: "POST" })
       username: row.username ? String(row.username) : undefined,
       avatarUrl: row.avatar_url ? String(row.avatar_url) : undefined,
       onboardingCompleted: Boolean(row.onboarding_completed),
+      explorerPreferences: DEFAULT_EXPLORER_PREFERENCES,
     };
+  });
+
+export const getExplorerPreferences = createServerFn({ method: "GET" })
+  .inputValidator((data: { userId?: string }) => data)
+  .handler(async ({ data }): Promise<ExplorerPreferences> => {
+    const userId = await getOptionalAuthenticatedUserId(data.userId);
+    if (!userId) return DEFAULT_EXPLORER_PREFERENCES;
+
+    const sql = await getSql();
+    if (!sql) return DEFAULT_EXPLORER_PREFERENCES;
+    await ensureUserProfileSchema(sql);
+
+    const rows = await sql`
+      SELECT explorer_preferences
+      FROM public.user_profiles
+      WHERE user_id = ${userId}
+      LIMIT 1
+    `;
+
+    return normalizeExplorerPreferences(rows[0]?.explorer_preferences);
+  });
+
+export const getExplorerPreferenceOptions = createServerFn({ method: "GET" }).handler(
+  async (): Promise<ExplorerPreferenceOptions> => {
+    const sql = await getSql();
+    if (!sql) return EMPTY_EXPLORER_PREFERENCE_OPTIONS;
+
+    const rows = await sql`
+      SELECT
+        COALESCE((
+          SELECT jsonb_agg(neighborhood ORDER BY neighborhood)
+          FROM (
+            SELECT DISTINCT NULLIF(trim(neighborhood), '') AS neighborhood
+            FROM public.venues
+            WHERE NULLIF(trim(neighborhood), '') IS NOT NULL
+            LIMIT 40
+          ) neighborhoods
+        ), '[]'::jsonb) AS neighborhoods,
+        COALESCE((
+          SELECT jsonb_agg(category ORDER BY category)
+          FROM (
+            SELECT DISTINCT NULLIF(trim(category), '') AS category
+            FROM public.venues
+            WHERE NULLIF(trim(category), '') IS NOT NULL
+            LIMIT 40
+          ) categories
+        ), '[]'::jsonb) AS categories
+    `;
+
+    return normalizePreferenceOptions(rows[0]);
+  },
+);
+
+export const updateExplorerPreferences = createServerFn({ method: "POST" })
+  .inputValidator((data: { userId?: string; preferences: ExplorerPreferences }) => data)
+  .handler(async ({ data }): Promise<ExplorerPreferences> => {
+    const userId = await requireAuthenticatedUserId(data.userId);
+    const preferences = normalizeExplorerPreferences(data.preferences);
+
+    const sql = await getSql();
+    if (!sql) throw new Error("DATABASE_URL não configurada.");
+    await ensureUserProfileSchema(sql);
+
+    const rows = await sql`
+      INSERT INTO public.user_profiles (
+        user_id,
+        account_type,
+        onboarding_completed,
+        explorer_preferences
+      )
+      VALUES (
+        ${userId},
+        'explorer',
+        true,
+        ${JSON.stringify(preferences)}::jsonb
+      )
+      ON CONFLICT (user_id) DO UPDATE SET
+        explorer_preferences = EXCLUDED.explorer_preferences,
+        updated_at = now()
+      RETURNING explorer_preferences
+    `;
+
+    return normalizeExplorerPreferences(rows[0]?.explorer_preferences);
   });
 
 export const saveVenueClaimRequest = createServerFn({ method: "POST" })
@@ -512,8 +641,59 @@ async function ensureVenueProfileSchema(_sql: Awaited<ReturnType<typeof getSql>>
   return;
 }
 
-async function ensureUserProfileSchema(_sql: Awaited<ReturnType<typeof getSql>>) {
-  return;
+async function ensureUserProfileSchema(sql: Awaited<ReturnType<typeof getSql>>) {
+  if (!sql) return;
+  await sql`
+    ALTER TABLE public.user_profiles
+    ADD COLUMN IF NOT EXISTS explorer_preferences jsonb NOT NULL DEFAULT '{}'::jsonb
+  `;
+}
+
+function normalizeExplorerPreferences(value: unknown): ExplorerPreferences {
+  const source =
+    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  const priceRange = String(source.priceRange ?? DEFAULT_EXPLORER_PREFERENCES.priceRange);
+
+  return {
+    neighborhoods: normalizeStringArray(source.neighborhoods, 6),
+    categories: normalizeStringArray(source.categories, 6),
+    maxDistanceKm: normalizePreferenceDistance(source.maxDistanceKm),
+    priceRange: isExplorerPriceRange(priceRange) ? priceRange : "any",
+    moods: normalizeStringArray(source.moods, 5).filter(isExplorerPreferenceMood),
+  };
+}
+
+function normalizePreferenceOptions(value: unknown): ExplorerPreferenceOptions {
+  const source =
+    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+
+  return {
+    neighborhoods: normalizeStringArray(source.neighborhoods, 40),
+    categories: normalizeStringArray(source.categories, 40),
+  };
+}
+
+function normalizeStringArray(value: unknown, limit: number) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean)
+    .filter((item, index, array) => array.indexOf(item) === index)
+    .slice(0, limit);
+}
+
+function normalizePreferenceDistance(value: unknown) {
+  const distance = Number(value ?? DEFAULT_EXPLORER_PREFERENCES.maxDistanceKm);
+  if (!Number.isFinite(distance)) return DEFAULT_EXPLORER_PREFERENCES.maxDistanceKm;
+  return Math.min(25, Math.max(1, Math.round(distance)));
+}
+
+function isExplorerPriceRange(value: string): value is ExplorerPriceRange {
+  return ["any", "free", "budget", "premium"].includes(value);
+}
+
+function isExplorerPreferenceMood(value: string): value is ExplorerPreferenceMood {
+  return ["calm", "live", "crowded", "date", "group"].includes(value);
 }
 
 function normalizeUsername(value?: string) {

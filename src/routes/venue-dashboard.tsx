@@ -16,6 +16,7 @@ import {
   Star,
   Ticket,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
@@ -71,7 +72,22 @@ function VenueDashboard() {
     events: [],
     updates: [],
     reviews: { total: 0, average: 0, atmosphere: 0, music: 0, price: 0, movement: 0, recent: [] },
+    crm: {
+      totalCustomers: 0,
+      segments: [
+        { key: "all", label: "Todos", count: 0 },
+        { key: "recurring", label: "Recorrentes", count: 0 },
+        { key: "inactive", label: "Sumidos 30d", count: 0 },
+        { key: "saved-not-visited", label: "Salvaram e não foram", count: 0 },
+        { key: "recent", label: "Recentes", count: 0 },
+        { key: "low-rating", label: "Avaliaram mal", count: 0 },
+        { key: "follower-not-visited", label: "Seguidores sem check-in", count: 0 },
+      ],
+      customers: [],
+    },
   });
+  const [crmSegment, setCrmSegment] =
+    useState<OwnerDashboard["crm"]["segments"][number]["key"]>("all");
   const [showEventForm, setShowEventForm] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -535,6 +551,14 @@ function VenueDashboard() {
 
       {venue ? <OwnerReviewsPanel reviews={dashboard.reviews} /> : null}
 
+      {venue ? (
+        <OwnerCrmPanel
+          crm={dashboard.crm}
+          activeSegment={crmSegment}
+          onSegmentChange={setCrmSegment}
+        />
+      ) : null}
+
       <section className="mt-7 px-6">
         <PillButton
           type="button"
@@ -962,6 +986,170 @@ function OwnerReviewsPanel({ reviews }: { reviews: OwnerDashboard["reviews"] }) 
         )}
       </div>
     </section>
+  );
+}
+
+function OwnerCrmPanel({
+  crm,
+  activeSegment,
+  onSegmentChange,
+}: {
+  crm: OwnerDashboard["crm"];
+  activeSegment: OwnerDashboard["crm"]["segments"][number]["key"];
+  onSegmentChange: (segment: OwnerDashboard["crm"]["segments"][number]["key"]) => void;
+}) {
+  const customers = crm.customers.filter((customer) => customer.segments.includes(activeSegment));
+  const activeLabel =
+    crm.segments.find((segment) => segment.key === activeSegment)?.label ?? "Todos";
+
+  return (
+    <section className="mt-5 px-6">
+      <div className="rounded-[1.75rem] border border-border bg-card p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-primary">CRM</p>
+            <h2 className="mt-1 text-lg font-black tracking-tight">Clientes do local</h2>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              Veja quem segue, salva, avalia ou aparece no seu estabelecimento.
+            </p>
+          </div>
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-white">
+            <Users className="h-5 w-5" />
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="rounded-2xl bg-muted p-3">
+            <p className="text-2xl font-black">{crm.totalCustomers}</p>
+            <p className="text-xs text-muted-foreground">clientes mapeados</p>
+          </div>
+          <div className="rounded-2xl bg-primary/10 p-3">
+            <p className="truncate text-sm font-black text-primary">{activeLabel}</p>
+            <p className="text-xs text-muted-foreground">segmento ativo</p>
+          </div>
+        </div>
+
+        <div className="relative mt-4">
+          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-4 bg-gradient-to-r from-card to-transparent" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-4 bg-gradient-to-l from-card to-transparent" />
+          <div className="no-scrollbar -mx-1 flex snap-x gap-2 overflow-x-auto scroll-px-1 px-1 pb-2">
+            {crm.segments.map((segment) => (
+              <button
+                key={segment.key}
+                type="button"
+                onClick={() => onSegmentChange(segment.key)}
+                className={`shrink-0 snap-start rounded-full px-3 py-2 text-xs font-black transition ${
+                  segment.key === activeSegment
+                    ? "bg-primary text-white"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {segment.label} · {segment.count}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {crm.totalCustomers === 0 ? (
+          <p className="mt-4 rounded-2xl bg-muted p-3 text-sm leading-relaxed text-muted-foreground">
+            O CRM aparece quando clientes seguem o local, salvam eventos, fazem check-in ou avaliam.
+          </p>
+        ) : customers.length === 0 ? (
+          <p className="mt-4 rounded-2xl bg-muted p-3 text-sm leading-relaxed text-muted-foreground">
+            Nenhum cliente neste segmento ainda.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {customers.map((customer) => (
+              <div key={customer.userId} className="rounded-2xl bg-muted p-3">
+                <div className="flex items-start gap-3">
+                  {customer.avatarUrl ? (
+                    <img
+                      src={customer.avatarUrl}
+                      alt=""
+                      className="h-11 w-11 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-background text-sm font-black">
+                      {customerInitials(customer.name)}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black">{customer.name}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {customer.lastCheckin
+                            ? `Último check-in ${formatCrmDate(customer.lastCheckin)}`
+                            : customer.lastInteraction
+                              ? `Última ação ${formatCrmDate(customer.lastInteraction)}`
+                              : "Sem ação recente"}
+                        </p>
+                      </div>
+                      {customer.averageRating > 0 ? (
+                        <span className="flex shrink-0 items-center gap-1 rounded-full bg-background px-2 py-1 text-xs font-black">
+                          <Star className="h-3.5 w-3.5 text-amber-400" fill="currentColor" />
+                          {customer.averageRating.toFixed(1)}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                      <CrmMiniMetric label="check-ins" value={customer.checkins} />
+                      <CrmMiniMetric label="salvos" value={customer.savedEvents} />
+                      <CrmMiniMetric label="reviews" value={customer.reviews} />
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {customer.followed ? <CrmTag>Segue</CrmTag> : null}
+                      {customer.favorited ? <CrmTag>Favoritou</CrmTag> : null}
+                      {customer.checkins >= 2 ? <CrmTag>Recorrente</CrmTag> : null}
+                      {customer.savedEvents > 0 && customer.checkins === 0 ? (
+                        <CrmTag>Precisa convite</CrmTag>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function CrmMiniMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl bg-background px-2 py-2">
+      <p className="text-sm font-black">{value}</p>
+      <p className="text-[10px] leading-tight text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function CrmTag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-full bg-background px-2 py-1 text-[10px] font-black text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+function customerInitials(name: string) {
+  return (
+    name
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "C"
+  );
+}
+
+function formatCrmDate(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(
+    new Date(value),
   );
 }
 

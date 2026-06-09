@@ -1,7 +1,16 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronDown, Flame, LocateFixed, Navigation, Search } from "lucide-react";
+import {
+  ChevronDown,
+  Flame,
+  LocateFixed,
+  Navigation,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
 import { type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
+import { authClient } from "@/auth";
+import { ExplorerPreferencesForm } from "@/components/explorer-preferences-form";
 import { FeedActionNav } from "@/components/feed-action-nav";
 import { RealMap, type RealMapMarker } from "@/components/real-map";
 import { getVenues, reverseLocationLabel, searchLocation, type VenueSummary } from "@/lib/data";
@@ -20,6 +29,14 @@ import {
   saveLocationConsent,
   saveRadiusKm,
 } from "@/lib/location";
+import {
+  DEFAULT_EXPLORER_PREFERENCES,
+  type ExplorerPreferences,
+  type ExplorerPreferenceOptions,
+  getExplorerPreferences,
+  summarizeExplorerPreferences,
+  updateExplorerPreferences,
+} from "@/lib/profile-actions";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/map")({
@@ -32,8 +49,12 @@ const RADIUS_PRESETS = [1, 3, 5, 10, 25];
 function MapView() {
   const venues = Route.useLoaderData();
   const navigate = useNavigate();
+  const { data: session } = authClient.useSession();
+  const userId = session?.user?.id;
   const findLocation = useServerFn(searchLocation);
   const reverseLocation = useServerFn(reverseLocationLabel);
+  const loadExplorerPreferences = useServerFn(getExplorerPreferences);
+  const saveExplorerPreferences = useServerFn(updateExplorerPreferences);
   const [location, setLocation] = useState<Coordinates | null>(null);
   const [locationLabel, setLocationLabel] = useState("São Paulo, Brasil");
   const [locationInput, setLocationInput] = useState("");
@@ -45,6 +66,9 @@ function MapView() {
   const [selectedRoute, setSelectedRoute] = useState<RoutePath | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [preferences, setPreferences] = useState<ExplorerPreferences>(DEFAULT_EXPLORER_PREFERENCES);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [preferencesSaving, setPreferencesSaving] = useState(false);
   const filterTouchStartY = useRef<number | null>(null);
 
   useEffect(() => {
@@ -87,6 +111,30 @@ function MapView() {
     };
   }, [reverseLocation]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPreferences() {
+      if (!userId) {
+        setPreferences(DEFAULT_EXPLORER_PREFERENCES);
+        return;
+      }
+
+      try {
+        const nextPreferences = await loadExplorerPreferences({ data: { userId } });
+        if (!cancelled) setPreferences(nextPreferences);
+      } catch {
+        if (!cancelled) setPreferences(DEFAULT_EXPLORER_PREFERENCES);
+      }
+    }
+
+    void loadPreferences();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadExplorerPreferences, userId]);
+
   const rankedVenues = useMemo(() => {
     const term = normalizeMapSearch(activeVenueSearch);
     return venues
@@ -94,13 +142,21 @@ function MapView() {
       .filter((venue) => !location || venue.distanceKm == null || venue.distanceKm <= radiusKm)
       .filter((venue) => !term || venueMatchesSearch(venue, term))
       .sort((a, b) => {
+        const byPreference = preferenceScore(b, preferences) - preferenceScore(a, preferences);
+        if (byPreference !== 0) return byPreference;
         if (!location) return movementScore(b) - movementScore(a);
         const byDistance =
           (a.distanceKm ?? Number.POSITIVE_INFINITY) - (b.distanceKm ?? Number.POSITIVE_INFINITY);
         if (Math.abs(byDistance) > 0.2) return byDistance;
         return movementScore(b) - movementScore(a);
       });
-  }, [activeVenueSearch, location, radiusKm, venues]);
+  }, [activeVenueSearch, location, preferences, radiusKm, venues]);
+  const preferenceOptions = useMemo(() => buildPreferenceOptions(rankedVenues), [rankedVenues]);
+  const preferenceOptionsContext = location
+    ? `${radiusKm} km de ${locationLabel}`
+    : activeVenueSearch
+      ? `locais filtrados por “${activeVenueSearch}”`
+      : "os locais cadastrados no mapa";
   const hotVenues = rankedVenues.filter((venue) => movementLevel(venue) !== "calm");
   const mapCenter = mapCenterCoordinates(location, rankedVenues);
   const mapMarkers = useMemo(
@@ -211,6 +267,35 @@ function MapView() {
     setRadiusKm(nextRadius);
     setSavedRadiusKm(nextRadius);
     setMessage(`Filtro salvo: ${nextRadius} km. O Explorar vai usar esse raio.`);
+  }
+
+  async function handleSavePreferences(nextPreferences: ExplorerPreferences) {
+    if (!userId) {
+      setPreferences(nextPreferences);
+      setRadiusKm(clampRadius(nextPreferences.maxDistanceKm));
+      setMessage("Entre na sua conta para salvar seu rolê ideal.");
+      return;
+    }
+
+    setPreferencesSaving(true);
+    try {
+      const savedPreferences = await saveExplorerPreferences({
+        data: { userId, preferences: nextPreferences },
+      });
+      const nextRadius = clampRadius(savedPreferences.maxDistanceKm);
+      setPreferences(savedPreferences);
+      setRadiusKm(nextRadius);
+      saveRadiusKm(nextRadius);
+      setSavedRadiusKm(nextRadius);
+      setPreferencesOpen(false);
+      setMessage("Preferências aplicadas no mapa.");
+    } catch (cause) {
+      setMessage(
+        cause instanceof Error ? cause.message : "Não foi possível salvar seu rolê ideal.",
+      );
+    } finally {
+      setPreferencesSaving(false);
+    }
   }
 
   return (
@@ -362,6 +447,53 @@ function MapView() {
                 >
                   {savedRadiusKm === radiusKm ? "Filtro salvo" : "Salvar filtro para Explorar"}
                 </button>
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-border bg-background p-3">
+                <button
+                  type="button"
+                  onClick={() => setPreferencesOpen((current) => !current)}
+                  className="flex w-full items-center justify-between gap-3 text-left"
+                  aria-expanded={preferencesOpen}
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <SlidersHorizontal className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-black">Meu rolê ideal</span>
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                        {summarizeExplorerPreferences(preferences)}
+                      </span>
+                    </span>
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      "h-5 w-5 shrink-0 text-muted-foreground transition-transform",
+                      preferencesOpen ? "rotate-180" : "rotate-0",
+                    )}
+                  />
+                </button>
+                <div
+                  className={cn(
+                    "grid transition-all duration-300 ease-out",
+                    preferencesOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+                  )}
+                >
+                  <div className="overflow-hidden">
+                    <div className="mt-4 border-t border-border pt-4">
+                      <ExplorerPreferencesForm
+                        value={preferences}
+                        options={preferenceOptions}
+                        optionsContext={preferenceOptionsContext}
+                        onSubmit={handleSavePreferences}
+                        submitting={preferencesSaving}
+                        submitLabel="Aplicar no mapa"
+                        compact
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -566,6 +698,48 @@ function venueMatchesSearch(venue: VenueSummary, term: string) {
     venue.address,
     venue.description,
   ].some((value) => normalizeMapSearch(value ?? "").includes(term));
+}
+
+function buildPreferenceOptions(venues: VenueSummary[]): ExplorerPreferenceOptions {
+  return {
+    neighborhoods: uniqueVenueValues(venues.map((venue) => venue.neighborhood)).slice(0, 24),
+    categories: uniqueVenueValues(venues.map((venue) => venue.category)).slice(0, 24),
+  };
+}
+
+function uniqueVenueValues(values: Array<string | undefined>) {
+  return values
+    .map((value) => value?.trim() ?? "")
+    .filter(Boolean)
+    .filter((value, index, array) => array.indexOf(value) === index)
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+function preferenceScore(venue: VenueSummary, preferences: ExplorerPreferences) {
+  let score = 0;
+  const neighborhood = normalizeMapSearch(venue.neighborhood ?? "");
+  const category = normalizeMapSearch(venue.category ?? "");
+  const haystack = normalizeMapSearch(
+    [venue.name, venue.category, venue.neighborhood, venue.description].filter(Boolean).join(" "),
+  );
+
+  if (preferences.neighborhoods.some((item) => neighborhood.includes(normalizeMapSearch(item)))) {
+    score += 5;
+  }
+
+  if (preferences.categories.some((item) => category.includes(normalizeMapSearch(item)))) {
+    score += 4;
+  }
+
+  for (const mood of preferences.moods) {
+    if (mood === "live" && venue.liveEvents > 0) score += 4;
+    if (mood === "crowded" && movementLevel(venue) !== "calm") score += 3;
+    if (mood === "calm" && movementLevel(venue) === "calm") score += 2;
+    if (mood === "date" && /gastronomia|bar|wine|jantar|drink|happy/.test(haystack)) score += 2;
+    if (mood === "group" && (venue.checkins >= 2 || venue.liveEvents > 0)) score += 2;
+  }
+
+  return score;
 }
 
 async function fetchRoutePath(origin: Coordinates, destination: Coordinates) {

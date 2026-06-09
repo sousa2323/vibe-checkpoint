@@ -15,6 +15,7 @@ import {
   MapPinOff,
   Moon,
   ShieldCheck,
+  SlidersHorizontal,
   Star,
   Store,
   Sun,
@@ -33,9 +34,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { authClient, getAuthUserName } from "@/auth";
+import { ExplorerPreferencesForm } from "@/components/explorer-preferences-form";
 import { FeedActionNav } from "@/components/feed-action-nav";
 import { OwnerNav } from "@/components/owner-nav";
 import { PillButton } from "@/components/pill-button";
+import { SwipeCollapseCard } from "@/components/swipe-collapse-card";
 import { UserAvatar } from "@/components/user-avatar";
 import { getInitials } from "@/lib/avatar";
 import { getAdminAccess } from "@/lib/admin-actions";
@@ -50,10 +53,17 @@ import { clearSavedLocationPreferences } from "@/lib/location";
 import { exportUserData, requestAccountDeletion } from "@/lib/privacy-actions";
 import {
   type AccountType,
+  DEFAULT_EXPLORER_PREFERENCES,
+  EMPTY_EXPLORER_PREFERENCE_OPTIONS,
+  type ExplorerPreferenceOptions,
+  type ExplorerPreferences,
   checkUsernameAvailability,
+  getExplorerPreferenceOptions,
   getUserProfile,
+  summarizeExplorerPreferences,
   type UserProfileSummary,
   updateExplorerProfile,
+  updateExplorerPreferences,
 } from "@/lib/profile-actions";
 import { requireAuthenticatedRoute } from "@/lib/route-guards";
 import { useAppTheme } from "@/lib/theme";
@@ -82,6 +92,8 @@ function Profile() {
   const getProfile = useServerFn(getUserProfile);
   const checkUsername = useServerFn(checkUsernameAvailability);
   const saveExplorerProfile = useServerFn(updateExplorerProfile);
+  const saveExplorerPreferences = useServerFn(updateExplorerPreferences);
+  const loadExplorerPreferenceOptions = useServerFn(getExplorerPreferenceOptions);
   const loadDashboard = useServerFn(getOwnerDashboard);
   const loadActivityStats = useServerFn(getUserActivityStats);
   const upload = useServerFn(uploadMedia);
@@ -121,6 +133,11 @@ function Profile() {
   const [exportFileName, setExportFileName] = useState("");
   const [deletionDialogOpen, setDeletionDialogOpen] = useState(false);
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
+  const [preferencesDialogOpen, setPreferencesDialogOpen] = useState(false);
+  const [preferencesSaving, setPreferencesSaving] = useState(false);
+  const [preferenceOptions, setPreferenceOptions] = useState<ExplorerPreferenceOptions>(
+    EMPTY_EXPLORER_PREFERENCE_OPTIONS,
+  );
 
   useEffect(() => {
     if (isPending) return;
@@ -161,8 +178,10 @@ function Profile() {
           const nextStats = normalizeActivityStats(
             await loadActivityStats({ data: { userId: user.id } }),
           );
+          const nextPreferenceOptions = await loadExplorerPreferenceOptions();
           if (cancelled) return;
           setActivityStats(nextStats);
+          setPreferenceOptions(nextPreferenceOptions);
           setDashboard(null);
         }
 
@@ -186,6 +205,7 @@ function Profile() {
     isPending,
     loadActivityStats,
     loadDashboard,
+    loadExplorerPreferenceOptions,
     metadataAccountType,
     navigate,
     user?.id,
@@ -434,6 +454,26 @@ function Profile() {
     }
   }
 
+  async function saveRolerPreferences(preferences: ExplorerPreferences) {
+    if (!user?.id || preferencesSaving) return;
+
+    setPreferencesSaving(true);
+    try {
+      const savedPreferences = await saveExplorerPreferences({
+        data: { userId: user.id, preferences },
+      });
+      setProfile((current) =>
+        current ? { ...current, explorerPreferences: savedPreferences } : current,
+      );
+      setPreferencesDialogOpen(false);
+      toast.success("Preferências de rolê salvas.");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "Não foi possível salvar preferências.");
+    } finally {
+      setPreferencesSaving(false);
+    }
+  }
+
   if (loadState === "loading") {
     return (
       <main className="app-shell flex min-h-screen flex-col items-center justify-center bg-background px-6 text-center">
@@ -635,6 +675,14 @@ function Profile() {
 
         <div className="space-y-3">
           <SectionLabel title="Preferências" />
+          {!isOwner ? (
+            <Row
+              icon={<SlidersHorizontal className="h-4 w-4" />}
+              label="Preferências de rolê"
+              helper={summarizeExplorerPreferences(profile?.explorerPreferences)}
+              onClick={() => setPreferencesDialogOpen(true)}
+            />
+          ) : null}
           <Row
             icon={isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             label={isDark ? "Modo claro" : "Modo escuro"}
@@ -649,12 +697,13 @@ function Profile() {
           />
         </div>
 
-        <section className="rounded-3xl border border-border bg-muted/40 p-4">
-          <SectionLabel title="Privacidade e LGPD" />
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            Seu nome, foto, avaliações, posts, check-ins e dados de estabelecimento podem aparecer
-            publicamente quando você publicar ou interagir no app.
-          </p>
+        <SwipeCollapseCard
+          title="Privacidade e LGPD"
+          description="Seu nome, foto, avaliações, posts, check-ins e dados de estabelecimento podem aparecer publicamente quando você publicar ou interagir no app."
+          icon={<ShieldCheck className="h-5 w-5" />}
+          defaultOpen={false}
+          className="bg-muted/40"
+        >
           <div className="mt-4 space-y-3">
             <Row
               icon={<Download className="h-4 w-4" />}
@@ -694,7 +743,7 @@ function Profile() {
             A exclusão definitiva ainda passa por revisão para preservar dados exigidos por lei,
             segurança e conteúdo público que precise ser anonimizado.
           </p>
-        </section>
+        </SwipeCollapseCard>
 
         <div className="space-y-3">
           <SectionLabel title="Conta" />
@@ -841,6 +890,33 @@ function Profile() {
               {privacyAction === "requestingDeletion" ? "Registrando..." : "Registrar pedido"}
             </button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={preferencesDialogOpen} onOpenChange={setPreferencesDialogOpen}>
+        <DialogContent className="bottom-0 top-auto max-h-[88vh] max-w-[420px] translate-y-0 gap-0 overflow-hidden rounded-t-[2rem] border-0 p-0 shadow-[0_-18px_44px_rgba(5,5,5,0.18)] sm:top-[50%] sm:translate-y-[-50%] sm:rounded-[2rem]">
+          <div className="p-5 pb-3">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <SlidersHorizontal className="h-5 w-5" />
+            </span>
+            <DialogHeader className="mt-4 space-y-2 text-left">
+              <DialogTitle className="text-xl font-black tracking-tight">
+                Preferências de rolê
+              </DialogTitle>
+              <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                Escolha bairros, estilos e clima para o app priorizar locais que combinam com você.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="max-h-[68vh] overflow-y-auto px-5 pb-5">
+            <ExplorerPreferencesForm
+              value={profile?.explorerPreferences ?? DEFAULT_EXPLORER_PREFERENCES}
+              options={preferenceOptions}
+              optionsContext="os locais cadastrados no ChegaAí"
+              onSubmit={saveRolerPreferences}
+              submitting={preferencesSaving}
+            />
+          </div>
         </DialogContent>
       </Dialog>
     </main>

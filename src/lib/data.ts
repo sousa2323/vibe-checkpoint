@@ -188,6 +188,42 @@ export interface OwnerReviewStats {
   recent: OwnerReviewSummary[];
 }
 
+export type OwnerCrmSegmentKey =
+  | "all"
+  | "recurring"
+  | "inactive"
+  | "saved-not-visited"
+  | "recent"
+  | "low-rating"
+  | "follower-not-visited";
+
+export interface OwnerCrmSegment {
+  key: OwnerCrmSegmentKey;
+  label: string;
+  count: number;
+}
+
+export interface OwnerCrmCustomer {
+  userId: string;
+  name: string;
+  avatarUrl?: string;
+  checkins: number;
+  lastCheckin?: string;
+  savedEvents: number;
+  followed: boolean;
+  favorited: boolean;
+  reviews: number;
+  averageRating: number;
+  lastInteraction?: string;
+  segments: OwnerCrmSegmentKey[];
+}
+
+export interface OwnerCrm {
+  totalCustomers: number;
+  segments: OwnerCrmSegment[];
+  customers: OwnerCrmCustomer[];
+}
+
 export interface PostComposerEventOption {
   id: string;
   title: string;
@@ -222,6 +258,7 @@ export interface OwnerDashboard {
   events: EventSummary[];
   updates: VenueUpdateSummary[];
   reviews: OwnerReviewStats;
+  crm: OwnerCrm;
   topSavedEvent?: {
     id: string;
     title: string;
@@ -573,6 +610,78 @@ const EMPTY_OWNER_REVIEW_STATS: OwnerReviewStats = {
   movement: 0,
   recent: [],
 };
+
+const OWNER_CRM_SEGMENT_LABELS: Record<OwnerCrmSegmentKey, string> = {
+  all: "Todos",
+  recurring: "Recorrentes",
+  inactive: "Sumidos 30d",
+  "saved-not-visited": "Salvaram e não foram",
+  recent: "Recentes",
+  "low-rating": "Avaliaram mal",
+  "follower-not-visited": "Seguidores sem check-in",
+};
+
+const EMPTY_OWNER_CRM: OwnerCrm = {
+  totalCustomers: 0,
+  segments: Object.entries(OWNER_CRM_SEGMENT_LABELS).map(([key, label]) => ({
+    key: key as OwnerCrmSegmentKey,
+    label,
+    count: 0,
+  })),
+  customers: [],
+};
+
+function getCrmCustomerSegments(customer: Omit<OwnerCrmCustomer, "segments">) {
+  const segments: OwnerCrmSegmentKey[] = ["all"];
+  const lastCheckinTime = customer.lastCheckin ? new Date(customer.lastCheckin).getTime() : 0;
+  const now = Date.now();
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+  const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+
+  if (customer.checkins >= 2) segments.push("recurring");
+  if (lastCheckinTime && now - lastCheckinTime >= thirtyDays) segments.push("inactive");
+  if (customer.savedEvents > 0 && customer.checkins === 0) segments.push("saved-not-visited");
+  if (lastCheckinTime && now - lastCheckinTime <= sevenDays) segments.push("recent");
+  if (customer.reviews > 0 && customer.averageRating > 0 && customer.averageRating < 3) {
+    segments.push("low-rating");
+  }
+  if (customer.followed && customer.checkins === 0) segments.push("follower-not-visited");
+
+  return segments;
+}
+
+function mapOwnerCrm(rows: Record<string, unknown>[]): OwnerCrm {
+  const customers = rows.map((row) => {
+    const customer = {
+      userId: String(row.user_id),
+      name: row.name ? String(row.name) : "Cliente ChegaAi",
+      avatarUrl: row.avatar_url ? String(row.avatar_url) : undefined,
+      checkins: Number(row.checkins ?? 0),
+      lastCheckin: row.last_checkin ? String(row.last_checkin) : undefined,
+      savedEvents: Number(row.saved_events ?? 0),
+      followed: Boolean(row.followed),
+      favorited: Boolean(row.favorited),
+      reviews: Number(row.reviews ?? 0),
+      averageRating: roundRating(row.average_rating),
+      lastInteraction: row.last_interaction ? String(row.last_interaction) : undefined,
+    } satisfies Omit<OwnerCrmCustomer, "segments">;
+
+    return { ...customer, segments: getCrmCustomerSegments(customer) };
+  });
+
+  const segments = Object.entries(OWNER_CRM_SEGMENT_LABELS).map(([key, label]) => ({
+    key: key as OwnerCrmSegmentKey,
+    label,
+    count: customers.filter((customer) => customer.segments.includes(key as OwnerCrmSegmentKey))
+      .length,
+  }));
+
+  return {
+    totalCustomers: customers.length,
+    segments,
+    customers,
+  };
+}
 
 function roundRating(value: unknown) {
   const rating = Number(value ?? 0);
@@ -2616,6 +2725,7 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
       events: [],
       updates: [],
       reviews: EMPTY_OWNER_REVIEW_STATS,
+      crm: EMPTY_OWNER_CRM,
     };
 
     const userId = await requireAuthenticatedUserId(data.userId);
@@ -2686,6 +2796,7 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
       updateRows,
       reviewStatsRows,
       reviewRows,
+      crmRows,
     ] = await Promise.all([
       sql`
         SELECT
@@ -2860,6 +2971,141 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
         ORDER BY er.updated_at DESC
         LIMIT 6
       `,
+      sql`
+        WITH crm_users AS (
+          SELECT c.user_id
+          FROM public.checkins c
+          LEFT JOIN public.events e ON e.id = c.event_id
+          WHERE c.venue_id = ${venue.id}
+            AND (c.event_id IS NULL OR e.status <> 'cancelled')
+
+          UNION
+
+          SELECT vf.user_id
+          FROM public.venue_followers vf
+          WHERE vf.venue_id = ${venue.id}
+
+          UNION
+
+          SELECT fv.user_id
+          FROM public.favorite_venues fv
+          WHERE fv.venue_id = ${venue.id}
+
+          UNION
+
+          SELECT se.user_id
+          FROM public.saved_events se
+          JOIN public.events e ON e.id = se.event_id
+          WHERE e.venue_id = ${venue.id}
+            AND e.status <> 'cancelled'
+
+          UNION
+
+          SELECT er.user_id
+          FROM public.event_reviews er
+          JOIN public.events e ON e.id = er.event_id
+          WHERE e.venue_id = ${venue.id}
+            AND e.status <> 'cancelled'
+        )
+        SELECT
+          cu.user_id,
+          COALESCE(up.display_name, up.username, 'Cliente ChegaAi') AS name,
+          up.avatar_url,
+          (
+            SELECT COUNT(c.id)::int
+            FROM public.checkins c
+            LEFT JOIN public.events ce ON ce.id = c.event_id
+            WHERE c.venue_id = ${venue.id}
+              AND c.user_id = cu.user_id
+              AND (c.event_id IS NULL OR ce.status <> 'cancelled')
+          ) AS checkins,
+          (
+            SELECT MAX(c.created_at)
+            FROM public.checkins c
+            LEFT JOIN public.events ce ON ce.id = c.event_id
+            WHERE c.venue_id = ${venue.id}
+              AND c.user_id = cu.user_id
+              AND (c.event_id IS NULL OR ce.status <> 'cancelled')
+          ) AS last_checkin,
+          (
+            SELECT COUNT(DISTINCT se.event_id)::int
+            FROM public.saved_events se
+            JOIN public.events e ON e.id = se.event_id
+            WHERE e.venue_id = ${venue.id}
+              AND e.status <> 'cancelled'
+              AND se.user_id = cu.user_id
+          ) AS saved_events,
+          EXISTS (
+            SELECT 1
+            FROM public.venue_followers vf
+            WHERE vf.venue_id = ${venue.id}
+              AND vf.user_id = cu.user_id
+          ) AS followed,
+          EXISTS (
+            SELECT 1
+            FROM public.favorite_venues fv
+            WHERE fv.venue_id = ${venue.id}
+              AND fv.user_id = cu.user_id
+          ) AS favorited,
+          (
+            SELECT COUNT(er.id)::int
+            FROM public.event_reviews er
+            JOIN public.events e ON e.id = er.event_id
+            WHERE e.venue_id = ${venue.id}
+              AND e.status <> 'cancelled'
+              AND er.user_id = cu.user_id
+          ) AS reviews,
+          (
+            SELECT AVG((er.atmosphere + er.music + er.price + er.movement) / 4.0)
+            FROM public.event_reviews er
+            JOIN public.events e ON e.id = er.event_id
+            WHERE e.venue_id = ${venue.id}
+              AND e.status <> 'cancelled'
+              AND er.user_id = cu.user_id
+          ) AS average_rating,
+          GREATEST(
+            COALESCE((
+              SELECT MAX(c.created_at)
+              FROM public.checkins c
+              LEFT JOIN public.events ce ON ce.id = c.event_id
+              WHERE c.venue_id = ${venue.id}
+                AND c.user_id = cu.user_id
+                AND (c.event_id IS NULL OR ce.status <> 'cancelled')
+            ), 'epoch'::timestamp with time zone),
+            COALESCE((
+              SELECT MAX(se.created_at)
+              FROM public.saved_events se
+              JOIN public.events e ON e.id = se.event_id
+              WHERE e.venue_id = ${venue.id}
+                AND e.status <> 'cancelled'
+                AND se.user_id = cu.user_id
+            ), 'epoch'::timestamp with time zone),
+            COALESCE((
+              SELECT MAX(vf.created_at)
+              FROM public.venue_followers vf
+              WHERE vf.venue_id = ${venue.id}
+                AND vf.user_id = cu.user_id
+            ), 'epoch'::timestamp with time zone),
+            COALESCE((
+              SELECT MAX(fv.created_at)
+              FROM public.favorite_venues fv
+              WHERE fv.venue_id = ${venue.id}
+                AND fv.user_id = cu.user_id
+            ), 'epoch'::timestamp with time zone),
+            COALESCE((
+              SELECT MAX(er.updated_at)
+              FROM public.event_reviews er
+              JOIN public.events e ON e.id = er.event_id
+              WHERE e.venue_id = ${venue.id}
+                AND e.status <> 'cancelled'
+                AND er.user_id = cu.user_id
+            ), 'epoch'::timestamp with time zone)
+          ) AS last_interaction
+        FROM crm_users cu
+        LEFT JOIN public.user_profiles up ON up.user_id = cu.user_id
+        ORDER BY last_interaction DESC
+        LIMIT 24
+      `,
     ]);
 
     const metrics = metricRows[0] ?? { events: 0, checkins: 0 };
@@ -2891,6 +3137,7 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
       events: eventRows.map((row) => mapEvent(row)),
       updates: updateRows.map(mapVenueUpdate),
       reviews,
+      crm: mapOwnerCrm(crmRows),
       reward,
       topSavedEvent: topSaved
         ? {
