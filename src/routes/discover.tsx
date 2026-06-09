@@ -437,15 +437,17 @@ function Discover() {
     <main className="app-shell bg-background pb-32">
       <NativeFeedback message={status} onClose={() => setStatus(null)} />
 
-      <header className="flex items-start justify-between gap-4 px-6 pt-8">
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">Encontre eventos em</p>
-          <h1 className="line-clamp-2 text-lg font-bold tracking-tight">{locationLabel}</h1>
-        </div>
+      <header className="flex items-center justify-between gap-4 px-6 pt-8">
+        <BrandLogo className="h-10 w-auto max-w-[2rem]" />
         <NotificationBellButton />
       </header>
 
       <div className="mt-5 px-6">
+        <p className="text-xs font-semibold text-muted-foreground">Eventos em</p>
+        <h1 className="mt-0.5 line-clamp-2 text-lg font-black tracking-tight">{locationLabel}</h1>
+      </div>
+
+      <div className="mt-4 px-6">
         <div className="flex h-12 items-center gap-2 rounded-full bg-muted px-4">
           <Search className="h-4 w-4 text-muted-foreground" />
           <input
@@ -679,6 +681,24 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       </div>
       {children}
     </section>
+  );
+}
+
+function BrandLogo({ className }: { className: string }) {
+  return (
+    <>
+      <img
+        src="/img/logo_chegaai2.png"
+        alt="ChegaAí"
+        className={`${className} object-contain dark:hidden`}
+      />
+      <img
+        src="/img/logo_chegaai.png"
+        alt=""
+        aria-hidden="true"
+        className={`${className} hidden object-contain dark:block`}
+      />
+    </>
   );
 }
 
