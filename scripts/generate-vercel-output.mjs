@@ -40,6 +40,7 @@ await mkdir(staticDir, { recursive: true });
 await mkdir(functionDir, { recursive: true });
 
 await cp(join(rootDir, "dist", "client"), staticDir, { recursive: true });
+await cp(join(rootDir, "public"), staticDir, { force: true, recursive: true });
 await cp(join(rootDir, "dist", "server"), join(functionDir, "dist", "server"), {
   recursive: true,
 });
@@ -51,6 +52,7 @@ await writeFile(
       version: 3,
       routes: [
         { src: "^/assets/(.*)$", dest: "/assets/$1" },
+        { src: "^/img/(.*)$", dest: "/img/$1" },
         { src: "^/favicon\\.ico$", dest: "/favicon.ico" },
         { src: "^/(.*)$", dest: "/api/server?__vc_path=/$1" },
       ],
