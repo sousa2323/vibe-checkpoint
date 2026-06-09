@@ -53,7 +53,10 @@ await writeFile(
       routes: [
         { src: "^/assets/(.*)$", dest: "/assets/$1" },
         { src: "^/img/(.*)$", dest: "/img/$1" },
-        { src: "^/favicon\\.ico$", dest: "/favicon.ico" },
+        {
+          src: "^/(favicon\\.ico|favicon-16x16\\.png|favicon-32x32\\.png|apple-touch-icon\\.png|pwa-192x192\\.png|pwa-512x512\\.png|pwa-maskable-512x512\\.png|site\\.webmanifest)$",
+          dest: "/$1",
+        },
         { src: "^/(.*)$", dest: "/api/server?__vc_path=/$1" },
       ],
     },
