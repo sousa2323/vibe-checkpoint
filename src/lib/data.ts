@@ -972,6 +972,13 @@ export const getVenues = createServerFn({ method: "GET" }).handler(
         END AS starts_at
       ) venue_occurrence ON true
       LEFT JOIN public.checkins c ON c.venue_id = v.id
+        AND c.event_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM public.events ce
+          WHERE ce.id = c.event_id
+            AND ce.status <> 'cancelled'
+        )
       LEFT JOIN public.favorite_venues fv ON fv.venue_id = v.id
       LEFT JOIN public.venue_followers vf ON vf.venue_id = v.id
       LEFT JOIN LATERAL (
@@ -1217,7 +1224,8 @@ export const getUserActivityStats = createServerFn({ method: "GET" })
         FROM public.checkins c
         LEFT JOIN public.events e ON e.id = c.event_id
         WHERE c.user_id = ${userId}
-          AND (c.event_id IS NULL OR e.status <> 'cancelled')
+          AND c.event_id IS NOT NULL
+          AND e.status <> 'cancelled'
       `,
       sql`
         SELECT COUNT(*)::int AS count
@@ -1988,13 +1996,7 @@ export const getVenueDetails = createServerFn({ method: "GET" })
           WHERE current_follower.venue_id = v.id
             AND current_follower.user_id = ${userId ?? ""}
         ) AS followed,
-        EXISTS (
-          SELECT 1
-          FROM public.checkins current_checkin
-          WHERE current_checkin.venue_id = v.id
-            AND current_checkin.event_id IS NULL
-            AND current_checkin.user_id = ${userId ?? ""}
-        ) AS checked_in
+        false AS checked_in
       FROM public.venues v
       LEFT JOIN public.events e ON e.venue_id = v.id
       LEFT JOIN LATERAL (
@@ -2016,6 +2018,13 @@ export const getVenueDetails = createServerFn({ method: "GET" })
         END AS starts_at
       ) venue_occurrence ON true
       LEFT JOIN public.checkins c ON c.venue_id = v.id
+        AND c.event_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM public.events ce
+          WHERE ce.id = c.event_id
+            AND ce.status <> 'cancelled'
+        )
       LEFT JOIN public.favorite_venues fv ON fv.venue_id = v.id
       LEFT JOIN public.venue_followers vf ON vf.venue_id = v.id
       LEFT JOIN LATERAL (
@@ -2141,7 +2150,8 @@ export const getVenueDetails = createServerFn({ method: "GET" })
         FROM public.checkins c
         LEFT JOIN public.events e ON e.id = c.event_id
         WHERE c.venue_id = ${data.venueId}
-          AND (c.event_id IS NULL OR e.status <> 'cancelled')
+          AND c.event_id IS NOT NULL
+          AND e.status <> 'cancelled'
       `,
     ]);
 
@@ -2296,8 +2306,9 @@ export const toggleCheckin = createServerFn({ method: "POST" })
     if (!sql) throw new Error("DATABASE_URL não configurada.");
     await ensureEventsRecurrenceSchema(sql);
 
-    if (data.eventId) {
-      const eventRows = await sql`
+    if (!data.eventId) throw new Error("Check-in disponível apenas em eventos.");
+
+    const eventRows = await sql`
         SELECT
           occurrence.starts_at,
           occurrence.starts_at > now() - ${eventActiveWindowInterval}::interval AS actions_available
@@ -2325,12 +2336,12 @@ export const toggleCheckin = createServerFn({ method: "POST" })
           AND e.status = 'published'
         LIMIT 1
       `;
-      if (eventRows.length === 0) throw new Error("Evento não encontrado.");
-      if (!eventRows[0]?.actions_available) throw new Error("Check-in encerrado para esse evento.");
+    if (eventRows.length === 0) throw new Error("Evento não encontrado.");
+    if (!eventRows[0]?.actions_available) throw new Error("Check-in encerrado para esse evento.");
 
-      const occurrenceStartsAt = String(eventRows[0].starts_at);
+    const occurrenceStartsAt = String(eventRows[0].starts_at);
 
-      const existing = await sql`
+    const existing = await sql`
         SELECT 1
         FROM public.checkins
         WHERE user_id = ${userId}
@@ -2340,8 +2351,8 @@ export const toggleCheckin = createServerFn({ method: "POST" })
         LIMIT 1
       `;
 
-      if (existing.length > 0) {
-        await sql`
+    if (existing.length > 0) {
+      await sql`
           DELETE FROM public.checkins
           WHERE user_id = ${userId}
             AND venue_id = ${data.venueId}
@@ -2349,45 +2360,16 @@ export const toggleCheckin = createServerFn({ method: "POST" })
             AND occurrence_starts_at = ${occurrenceStartsAt}
         `;
 
-        return { checkedIn: false };
-      }
+      return { checkedIn: false };
+    }
 
-      await sql`
+    await sql`
         INSERT INTO public.checkins (user_id, venue_id, event_id, occurrence_starts_at)
         VALUES (${userId}, ${data.venueId}, ${data.eventId}, ${occurrenceStartsAt})
         ON CONFLICT (user_id, venue_id, event_id) DO UPDATE SET
           occurrence_starts_at = EXCLUDED.occurrence_starts_at,
           created_at = now()
       `;
-
-      return { checkedIn: true };
-    }
-
-    const existing = await sql`
-      SELECT 1
-      FROM public.checkins
-      WHERE user_id = ${userId}
-        AND venue_id = ${data.venueId}
-        AND event_id IS NULL
-      LIMIT 1
-    `;
-
-    if (existing.length > 0) {
-      await sql`
-        DELETE FROM public.checkins
-        WHERE user_id = ${userId}
-          AND venue_id = ${data.venueId}
-          AND event_id IS NULL
-      `;
-
-      return { checkedIn: false };
-    }
-
-    await sql`
-      INSERT INTO public.checkins (user_id, venue_id, event_id)
-      VALUES (${userId}, ${data.venueId}, null)
-      ON CONFLICT (user_id, venue_id, event_id) DO NOTHING
-    `;
 
     return { checkedIn: true };
   });
@@ -2777,6 +2759,13 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
         END AS starts_at
       ) venue_occurrence ON true
       LEFT JOIN public.checkins c ON c.venue_id = v.id
+        AND c.event_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM public.events ce
+          WHERE ce.id = c.event_id
+            AND ce.status <> 'cancelled'
+        )
       LEFT JOIN public.favorite_venues fv ON fv.venue_id = v.id
       LEFT JOIN public.venue_followers vf ON vf.venue_id = v.id
       WHERE v.owner_user_id = ${userId}
@@ -2808,7 +2797,8 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
             FROM public.checkins c
             LEFT JOIN public.events ce ON ce.id = c.event_id
             WHERE c.venue_id = ${venue.id}
-              AND (c.event_id IS NULL OR ce.status <> 'cancelled')
+              AND c.event_id IS NOT NULL
+              AND ce.status <> 'cancelled'
           ) AS checkins
         FROM public.venues v
         LEFT JOIN public.events e ON e.venue_id = v.id AND e.status = 'published'
@@ -2977,7 +2967,8 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
           FROM public.checkins c
           LEFT JOIN public.events e ON e.id = c.event_id
           WHERE c.venue_id = ${venue.id}
-            AND (c.event_id IS NULL OR e.status <> 'cancelled')
+            AND c.event_id IS NOT NULL
+            AND e.status <> 'cancelled'
 
           UNION
 
@@ -3017,7 +3008,8 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
             LEFT JOIN public.events ce ON ce.id = c.event_id
             WHERE c.venue_id = ${venue.id}
               AND c.user_id = cu.user_id
-              AND (c.event_id IS NULL OR ce.status <> 'cancelled')
+              AND c.event_id IS NOT NULL
+              AND ce.status <> 'cancelled'
           ) AS checkins,
           (
             SELECT MAX(c.created_at)
@@ -3025,7 +3017,8 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
             LEFT JOIN public.events ce ON ce.id = c.event_id
             WHERE c.venue_id = ${venue.id}
               AND c.user_id = cu.user_id
-              AND (c.event_id IS NULL OR ce.status <> 'cancelled')
+              AND c.event_id IS NOT NULL
+              AND ce.status <> 'cancelled'
           ) AS last_checkin,
           (
             SELECT COUNT(DISTINCT se.event_id)::int
@@ -3070,7 +3063,8 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
               LEFT JOIN public.events ce ON ce.id = c.event_id
               WHERE c.venue_id = ${venue.id}
                 AND c.user_id = cu.user_id
-                AND (c.event_id IS NULL OR ce.status <> 'cancelled')
+                AND c.event_id IS NOT NULL
+                AND ce.status <> 'cancelled'
             ), 'epoch'::timestamp with time zone),
             COALESCE((
               SELECT MAX(se.created_at)

@@ -1,9 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { BadgeCheck, Bell, CheckCircle2, Heart, Instagram, MapPin, Share2 } from "lucide-react";
+import { Bell, Heart, Instagram, MapPin, Share2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { authClient } from "@/auth";
-import { CheckinReward } from "@/components/checkin-reward";
 import { EventCard } from "@/components/event-card";
 import { FeedActionNav } from "@/components/feed-action-nav";
 import { NativeFeedback } from "@/components/native-feedback";
@@ -17,13 +16,7 @@ import {
   type VenueDetail,
 } from "@/lib/data";
 import { canEventAcceptExplorerActions } from "@/lib/event-time";
-import {
-  buildVenueShareText,
-  getCheckinReward,
-  getRewardActionLabel,
-  getRewardDescription,
-  getRewardMeta,
-} from "@/lib/growth";
+import { buildVenueShareText, getCheckinReward } from "@/lib/growth";
 
 export const Route = createFileRoute("/venues/$venueId")({
   loader: ({ params }) => getVenueDetails({ data: { venueId: params.venueId } }),
@@ -111,8 +104,8 @@ function VenueDetailPage() {
     setStatus(result.saved ? "Evento salvo na agenda." : "Evento removido da agenda.");
   }
 
-  async function onCheckin(eventId?: string) {
-    const event = eventId ? detail?.events.find((item) => item.id === eventId) : null;
+  async function onCheckin(eventId: string) {
+    const event = detail?.events.find((item) => item.id === eventId);
     if (event && !canEventAcceptExplorerActions(event.startsAt)) {
       setStatus("Check-in encerrado para esse evento.");
       return;
@@ -124,19 +117,16 @@ function VenueDetailPage() {
     const result = await checkin({ data: { userId, venueId: detail.venue.id, eventId } });
     setDetail({
       ...detail,
-      checkedIn: eventId ? detail.checkedIn : result.checkedIn,
       checkins: Math.max(0, detail.checkins + (result.checkedIn ? 1 : -1)),
-      events: eventId
-        ? detail.events.map((event) =>
-            event.id === eventId
-              ? {
-                  ...event,
-                  checkedIn: result.checkedIn,
-                  going: Math.max(0, event.going + (result.checkedIn ? 1 : -1)),
-                }
-              : event,
-          )
-        : detail.events,
+      events: detail.events.map((event) =>
+        event.id === eventId
+          ? {
+              ...event,
+              checkedIn: result.checkedIn,
+              going: Math.max(0, event.going + (result.checkedIn ? 1 : -1)),
+            }
+          : event,
+      ),
     });
     loadVenue({ data: { venueId: detail.venue.id, userId } })
       .then(setDetail)
@@ -185,19 +175,6 @@ function VenueDetailPage() {
   }
 
   const { venue } = detail;
-  const checkedIn = Boolean(detail.checkedIn);
-  const reward = getCheckinReward(venue);
-  const rewardDescription = getRewardDescription(venue);
-  const rewardMeta = getRewardMeta(venue);
-  const rewardActionLabel = getRewardActionLabel(venue);
-  const rewardUnlocked =
-    venue.reward?.action === "follow"
-      ? Boolean(venue.followed)
-      : venue.reward?.action === "save"
-        ? Boolean(venue.favorited)
-        : venue.reward?.action === "checkin"
-          ? checkedIn
-          : false;
 
   return (
     <main className="app-shell bg-background pb-32">
@@ -230,22 +207,13 @@ function VenueDetailPage() {
           {venue.address ?? venue.neighborhood}
         </p>
 
-        <div className="mt-5 grid grid-cols-4 gap-2 rounded-3xl bg-muted p-4 text-center">
+        <div className="mt-5 grid grid-cols-3 gap-2 rounded-3xl bg-muted p-4 text-center">
           <Stat label="Eventos" value={String(detail.events.length)} />
-          <Stat label="Check-ins" value={String(detail.checkins)} />
           <Stat label="Favoritos" value={String(venue.favoriteCount ?? 0)} />
           <Stat label="Seguidores" value={String(venue.followerCount ?? 0)} />
         </div>
 
-        <CheckinReward
-          reward={reward}
-          description={rewardDescription}
-          actionLabel={rewardActionLabel}
-          meta={rewardMeta}
-          unlocked={rewardUnlocked}
-        />
-
-        <div className="mt-5 grid grid-cols-2 gap-2">
+        <div className="mt-5 grid grid-cols-3 gap-2">
           <button
             type="button"
             onClick={() => void onToggleFollow()}
@@ -273,18 +241,6 @@ function VenueDetailPage() {
           >
             <Share2 className="h-4 w-4" />
             Enviar
-          </button>
-          <button
-            type="button"
-            onClick={() => void onCheckin()}
-            className={
-              checkedIn
-                ? "flex h-12 items-center justify-center gap-2 rounded-full bg-emerald-500 text-sm font-bold text-white shadow-[0_10px_24px_-14px_rgba(16,185,129,0.95)] ring-2 ring-emerald-500/20"
-                : "flex h-12 items-center justify-center gap-2 rounded-full bg-primary text-sm font-bold text-white"
-            }
-          >
-            {checkedIn ? <BadgeCheck className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-            {checkedIn ? "Confirmado" : "Check-in"}
           </button>
         </div>
       </section>

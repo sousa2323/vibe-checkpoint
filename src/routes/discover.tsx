@@ -60,6 +60,7 @@ const establishmentCategories = [
 ];
 
 const LOCATION_PROMPT_DISMISSED_KEY = "chegaai:location-prompt-dismissed";
+const REGION_ALERTS_KEY = "chegaai:region-alerts";
 
 function readLocationPromptDismissed() {
   if (typeof window === "undefined") return false;
@@ -78,6 +79,28 @@ function dismissLocationPrompt() {
     window.localStorage.setItem(LOCATION_PROMPT_DISMISSED_KEY, "true");
   } catch {
     // Prompt dismissal is convenience-only; permission/cache remain the source of truth.
+  }
+}
+
+function saveRegionAlert(label: string, radiusKm: number) {
+  if (typeof window === "undefined") return;
+
+  try {
+    const stored = window.localStorage.getItem(REGION_ALERTS_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    const alerts = Array.isArray(parsed) ? parsed : [];
+    const key = `${label}:${radiusKm}`;
+    const next = [
+      { key, label, radiusKm, createdAt: new Date().toISOString() },
+      ...alerts.filter((alert) => {
+        if (!alert || typeof alert !== "object") return false;
+        return (alert as { key?: unknown }).key !== key;
+      }),
+    ].slice(0, 8);
+
+    window.localStorage.setItem(REGION_ALERTS_KEY, JSON.stringify(next));
+  } catch {
+    // Region alerts are a local convenience; the feed still works without them.
   }
 }
 
@@ -401,6 +424,15 @@ function Discover() {
     );
   }
 
+  function openNearbyMap() {
+    navigate({ to: "/map" });
+  }
+
+  function activateRegionAlert() {
+    saveRegionAlert(locationLabel, radiusKm);
+    setStatus(`Aviso salvo para ${locationLabel}.`);
+  }
+
   return (
     <main className="app-shell bg-background pb-32">
       <NativeFeedback message={status} onClose={() => setStatus(null)} />
@@ -533,7 +565,11 @@ function Discover() {
       ) : (
         <EmptyState
           title="Nada no feed ainda"
-          text="Eventos publicados e postagens de quem fez check-in vão aparecer aqui."
+          text="Eventos publicados e posts de check-in vão aparecer aqui. Enquanto isso, veja locais próximos no mapa."
+          locationLabel={locationLabel}
+          radiusKm={radiusKm}
+          onOpenMap={openNearbyMap}
+          onActivateAlert={activateRegionAlert}
         />
       )}
 
@@ -646,11 +682,42 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function EmptyState({ title, text }: { title: string; text: string }) {
+function EmptyState({
+  title,
+  text,
+  locationLabel,
+  radiusKm,
+  onOpenMap,
+  onActivateAlert,
+}: {
+  title: string;
+  text: string;
+  locationLabel: string;
+  radiusKm: number;
+  onOpenMap: () => void;
+  onActivateAlert: () => void;
+}) {
   return (
     <div className="mx-6 mt-8 rounded-3xl border border-border p-6 text-center">
       <p className="font-bold">{title}</p>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{text}</p>
+      <button
+        type="button"
+        onClick={onOpenMap}
+        className="mt-5 h-10 rounded-full bg-muted px-5 text-xs font-black text-foreground transition active:scale-[0.98]"
+      >
+        Ver no mapa
+      </button>
+      <div className="mt-4 text-[11px] leading-relaxed text-muted-foreground">
+        {locationLabel} · {radiusKm} km
+      </div>
+      <button
+        type="button"
+        onClick={onActivateAlert}
+        className="mt-2 text-xs font-black text-muted-foreground underline-offset-4 transition hover:text-foreground hover:underline"
+      >
+        Receber aviso quando tiver rolê aqui
+      </button>
     </div>
   );
 }
