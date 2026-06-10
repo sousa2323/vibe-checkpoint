@@ -7,8 +7,12 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect } from "react";
 
+import { authClient } from "@/auth";
+import { registerPushToken } from "@/lib/data";
+import { registerNativePushNotifications } from "@/lib/push-notifications";
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import appCss from "../styles.css?url";
 
@@ -149,6 +153,10 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const router = useRouter();
+  const { data } = authClient.useSession();
+  const userId = data?.user?.id;
+  const savePushToken = useServerFn(registerPushToken);
 
   useEffect(() => {
     const initialPath = window.__CHEGAAI_CAPACITOR_INITIAL_PATH;
@@ -158,6 +166,18 @@ function RootComponent() {
     window.history.replaceState(window.history.state, "", initialPath);
     window.dispatchEvent(new PopStateEvent("popstate"));
   }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    void registerNativePushNotifications({
+      userId,
+      saveToken: ({ token, platform }) => savePushToken({ data: { userId, token, platform } }),
+      openRoute: (route) => {
+        void router.navigate({ to: route as never });
+      },
+    });
+  }, [router, savePushToken, userId]);
 
   return (
     <QueryClientProvider client={queryClient}>

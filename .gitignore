@@ -44,8 +44,13 @@ migrations
 DEPLOY.md
 supabase/*
 !supabase/migrations/
+!supabase/functions/
 supabase/migrations/*
 !supabase/migrations/20260605101500_add_event_recurrence.sql
+!supabase/migrations/20260610120000_add_notifications.sql
+supabase/functions/*
+!supabase/functions/dispatch-push-notifications/
+!supabase/functions/dispatch-push-notifications/index.ts
 ANDROID.md
 erro.txt
 

@@ -4,13 +4,7 @@ import { Bell, CalendarClock, Megaphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { authClient } from "@/auth";
 import { FeedActionNav } from "@/components/feed-action-nav";
-import {
-  type AgendaReminderSummary,
-  getAgendaReminders,
-  getFollowerUpdates,
-  markNotificationsSeen,
-  type VenueUpdateSummary,
-} from "@/lib/data";
+import { getNotifications, markNotificationsSeen, type NotificationSummary } from "@/lib/data";
 
 export const Route = createFileRoute("/updates")({
   component: UpdatesPage,
@@ -20,37 +14,29 @@ function UpdatesPage() {
   const navigate = useNavigate();
   const { data } = authClient.useSession();
   const user = data?.user;
-  const loadUpdates = useServerFn(getFollowerUpdates);
-  const loadReminders = useServerFn(getAgendaReminders);
+  const loadNotifications = useServerFn(getNotifications);
   const markSeen = useServerFn(markNotificationsSeen);
-  const [updates, setUpdates] = useState<VenueUpdateSummary[]>([]);
-  const [reminders, setReminders] = useState<AgendaReminderSummary[]>([]);
+  const [notifications, setNotifications] = useState<NotificationSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user?.id) {
-      setUpdates([]);
-      setReminders([]);
+      setNotifications([]);
       setLoading(false);
       return;
     }
 
     setLoading(true);
-    Promise.all([
-      loadUpdates({ data: { userId: user.id } }),
-      loadReminders({ data: { userId: user.id } }),
-    ])
-      .then(([nextUpdates, nextReminders]) => {
-        setUpdates(nextUpdates);
-        setReminders(nextReminders);
+    loadNotifications({ data: { userId: user.id } })
+      .then((nextNotifications) => {
+        setNotifications(nextNotifications);
         return markSeen({ data: { userId: user.id } });
       })
       .catch(() => {
-        setUpdates([]);
-        setReminders([]);
+        setNotifications([]);
       })
       .finally(() => setLoading(false));
-  }, [loadReminders, loadUpdates, markSeen, user?.id]);
+  }, [loadNotifications, markSeen, user?.id]);
 
   return (
     <main className="app-shell bg-background pb-32">
@@ -76,7 +62,7 @@ function UpdatesPage() {
           />
         ) : loading ? (
           <p className="rounded-2xl bg-muted p-4 text-sm text-muted-foreground">Carregando...</p>
-        ) : reminders.length === 0 && updates.length === 0 ? (
+        ) : notifications.length === 0 ? (
           <EmptyState
             title="Nenhuma novidade ainda"
             text="Siga seus locais favoritos para acompanhar promoções e avisos publicados por eles."
@@ -85,73 +71,43 @@ function UpdatesPage() {
           />
         ) : (
           <>
-            {reminders.map((reminder) => (
+            {notifications.map((notification) => (
               <button
-                key={reminder.id}
+                key={notification.id}
                 type="button"
-                onClick={() =>
-                  navigate({ to: "/events/$eventId", params: { eventId: reminder.eventId } })
-                }
-                className="w-full rounded-3xl border border-primary/20 bg-primary/5 p-4 text-left"
-              >
-                <div className="flex gap-3">
-                  <img
-                    src={reminder.image}
-                    alt={reminder.title}
-                    className="h-14 w-14 rounded-2xl object-cover"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-white">
-                        <CalendarClock className="h-3 w-3" />
-                        Agenda
-                      </span>
-                      <span className="truncate text-xs font-semibold text-primary">
-                        {reminderLabel(reminder.startsAt)}
-                      </span>
-                    </div>
-                    <p className="mt-2 font-black leading-tight">{reminder.title}</p>
-                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                      Seu evento salvo começa {reminderLabel(reminder.startsAt).toLowerCase()}.
-                    </p>
-                    <p className="mt-3 text-xs font-semibold text-muted-foreground">
-                      {reminder.venue} · {reminder.date}
-                    </p>
-                  </div>
-                </div>
-              </button>
-            ))}
-
-            {updates.map((update) => (
-              <button
-                key={update.id}
-                type="button"
-                onClick={() =>
-                  navigate({ to: "/venues/$venueId", params: { venueId: update.venueId } })
-                }
+                onClick={() => openNotification(notification, navigate)}
                 className="w-full rounded-3xl border border-border p-4 text-left"
               >
                 <div className="flex gap-3">
-                  <img
-                    src={update.venueImage}
-                    alt={update.venueName}
-                    className="h-14 w-14 rounded-2xl object-cover"
-                  />
+                  {notification.image ? (
+                    <img
+                      src={notification.image}
+                      alt={notification.title}
+                      className="h-14 w-14 rounded-2xl object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                      <Bell className="h-5 w-5" />
+                    </span>
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">
-                        {updateKindLabel(update.kind)}
+                      <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">
+                        {notification.type === "event_reminder" ? (
+                          <CalendarClock className="h-3 w-3" />
+                        ) : null}
+                        {notificationTypeLabel(notification.type)}
                       </span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {update.venueName}
-                      </span>
+                      {!notification.read ? (
+                        <span className="h-2 w-2 rounded-full bg-red-500" />
+                      ) : null}
                     </div>
-                    <p className="mt-2 font-black leading-tight">{update.title}</p>
+                    <p className="mt-2 font-black leading-tight">{notification.title}</p>
                     <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                      {update.body}
+                      {notification.body}
                     </p>
                     <p className="mt-3 text-xs font-semibold text-muted-foreground">
-                      {update.venueNeighborhood}
+                      {formatNotificationDate(notification.createdAt)}
                     </p>
                   </div>
                 </div>
@@ -166,22 +122,45 @@ function UpdatesPage() {
   );
 }
 
-function updateKindLabel(kind: VenueUpdateSummary["kind"]) {
-  if (kind === "promo") return "Promoção";
-  if (kind === "event") return "Evento";
-  return "Aviso";
+function notificationTypeLabel(type: NotificationSummary["type"]) {
+  if (type === "event_reminder") return "Agenda";
+  if (type === "post_comment") return "Comentário";
+  if (type === "group_activity") return "Grupo";
+  if (type === "reward") return "Recompensa";
+  return "Novidade";
 }
 
-function reminderLabel(startsAt: string) {
-  const diffMs = new Date(startsAt).getTime() - Date.now();
-  const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+function formatNotificationDate(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+    .format(new Date(value))
+    .replace(".", "");
+}
 
-  if (diffMinutes < 60) return `Em ${Math.max(1, diffMinutes)} min`;
+function openNotification(
+  notification: NotificationSummary,
+  navigate: ReturnType<typeof useNavigate>,
+) {
+  if (notification.targetType === "event") {
+    navigate({ to: "/events/$eventId", params: { eventId: notification.targetId } });
+    return;
+  }
 
-  const diffHours = Math.round(diffMinutes / 60);
-  if (diffHours < 24) return `Em ${diffHours} h`;
+  if (notification.targetType === "venue") {
+    navigate({ to: "/venues/$venueId", params: { venueId: notification.targetId } });
+    return;
+  }
 
-  return "Amanhã";
+  if (notification.targetType === "group") {
+    navigate({ to: "/groups/$groupId", params: { groupId: notification.targetId } });
+    return;
+  }
+
+  navigate({ to: "/updates" });
 }
 
 function EmptyState({

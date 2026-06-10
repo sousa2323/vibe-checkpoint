@@ -98,6 +98,21 @@ export interface AgendaReminderSummary {
   startsAt: string;
 }
 
+export interface NotificationSummary {
+  id: string;
+  type: "venue_update" | "event_reminder" | "post_comment" | "group_activity" | "reward";
+  title: string;
+  body: string;
+  targetType: "venue" | "event" | "post" | "group" | "profile";
+  targetId: string;
+  route: string;
+  image?: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export type PushPlatform = "ios" | "android" | "web";
+
 export interface GroupPlanOptionSummary {
   id: string;
   eventId?: string;
@@ -523,6 +538,21 @@ function mapAgendaReminder(row: Record<string, unknown>): AgendaReminderSummary 
   };
 }
 
+function mapNotification(row: Record<string, unknown>): NotificationSummary {
+  return {
+    id: String(row.id),
+    type: String(row.type) as NotificationSummary["type"],
+    title: String(row.title),
+    body: String(row.body ?? ""),
+    targetType: String(row.target_type) as NotificationSummary["targetType"],
+    targetId: String(row.target_id),
+    route: String(row.route),
+    image: row.image_url ? String(row.image_url) : undefined,
+    read: Boolean(row.read_at),
+    createdAt: String(row.created_at),
+  };
+}
+
 function mapGroupPlan(rows: Record<string, unknown>[], voterKey?: string): GroupPlanSummary | null {
   const first = rows[0];
   if (!first) return null;
@@ -709,6 +739,115 @@ async function ensureVenueUpdatesSchema(_sql: SqlClient) {
 
 async function ensureNotificationReadsSchema(_sql: SqlClient) {
   return;
+}
+
+async function ensureNotificationsSchema(sql: SqlClient) {
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.notifications (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id text NOT NULL,
+      unique_key text NOT NULL,
+      type text NOT NULL,
+      title text NOT NULL,
+      body text NOT NULL DEFAULT '',
+      target_type text NOT NULL,
+      target_id text NOT NULL,
+      route text NOT NULL,
+      image_url text,
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      read_at timestamptz,
+      pushed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT notifications_user_unique_key_unique UNIQUE (user_id, unique_key)
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.push_tokens (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id text NOT NULL,
+      token text NOT NULL UNIQUE,
+      platform text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      last_seen_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS notifications_user_created_idx
+    ON public.notifications (user_id, created_at DESC)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS notifications_user_unread_idx
+    ON public.notifications (user_id, created_at DESC)
+    WHERE read_at IS NULL
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS push_tokens_user_idx
+    ON public.push_tokens (user_id, last_seen_at DESC)
+  `;
+}
+
+async function materializeDueEventReminderNotifications(sql: SqlClient, userId: string) {
+  await ensureEventsRecurrenceSchema(sql);
+  await ensureNotificationsSchema(sql);
+
+  await sql`
+    INSERT INTO public.notifications (
+      user_id,
+      unique_key,
+      type,
+      title,
+      body,
+      target_type,
+      target_id,
+      route,
+      image_url,
+      created_at
+    )
+    SELECT
+      ${userId},
+      'event_reminder:' || e.id::text || ':' || to_char(occurrence.starts_at, 'YYYY-MM-DD"T"HH24:MI:SSOF'),
+      'event_reminder',
+      e.title,
+      'Seu evento salvo começa ' || CASE
+        WHEN EXTRACT(EPOCH FROM (occurrence.starts_at - now())) < 3600
+          THEN 'em ' || GREATEST(1, ROUND(EXTRACT(EPOCH FROM (occurrence.starts_at - now())) / 60))::int || ' min.'
+        ELSE 'em ' || ROUND(EXTRACT(EPOCH FROM (occurrence.starts_at - now())) / 3600)::int || ' h.'
+      END,
+      'event',
+      e.id::text,
+      '/events/' || e.id::text,
+      e.image_url,
+      LEAST(now(), occurrence.starts_at)
+    FROM public.saved_events se
+    JOIN public.events e ON e.id = se.event_id
+    CROSS JOIN LATERAL (
+      SELECT CASE
+        WHEN e.recurrence_type = 'weekly' THEN
+          CASE
+            WHEN date_trunc('day', now())
+              + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+              + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+            THEN date_trunc('day', now())
+              + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+              + e.recurrence_time
+            ELSE date_trunc('day', now())
+              + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+              + e.recurrence_time
+              + interval '7 days'
+          END
+        ELSE e.starts_at
+      END AS starts_at
+    ) occurrence
+    WHERE se.user_id = ${userId}
+      AND e.status = 'published'
+      AND occurrence.starts_at > now()
+      AND occurrence.starts_at <= now() + interval '24 hours'
+    ON CONFLICT (user_id, unique_key) DO NOTHING
+  `;
 }
 
 async function ensureGroupPlansSchema(_sql: SqlClient) {
@@ -2462,6 +2601,39 @@ export const createVenueUpdate = createServerFn({ method: "POST" })
       VALUES (${String(venue.id)}, ${data.title.trim()}, ${data.body.trim()}, ${data.kind})
       RETURNING id, venue_id, title, body, kind, created_at
     `;
+    const updateId = String(rows[0].id);
+
+    await ensureNotificationsSchema(sql);
+    await sql`
+      INSERT INTO public.notifications (
+        user_id,
+        unique_key,
+        type,
+        title,
+        body,
+        target_type,
+        target_id,
+        route,
+        image_url,
+        created_at
+      )
+      SELECT
+        vf.user_id,
+        ${`venue_update:${updateId}`},
+        'venue_update',
+        ${data.title.trim()},
+        ${data.body.trim()},
+        'venue',
+        v.id::text,
+        '/venues/' || v.id::text,
+        v.cover_image_url,
+        ${String(rows[0].created_at)}::timestamptz
+      FROM public.venue_followers vf
+      JOIN public.venues v ON v.id = vf.venue_id
+      WHERE vf.venue_id = ${String(venue.id)}
+        AND vf.user_id <> ${userId}
+      ON CONFLICT (user_id, unique_key) DO NOTHING
+    `;
 
     const updateRows = await sql`
       SELECT
@@ -2476,7 +2648,7 @@ export const createVenueUpdate = createServerFn({ method: "POST" })
         v.cover_image_url
       FROM public.venue_updates vu
       JOIN public.venues v ON v.id = vu.venue_id
-      WHERE vu.id = ${String(rows[0].id)}
+      WHERE vu.id = ${updateId}
       LIMIT 1
     `;
 
@@ -2515,6 +2687,38 @@ export const getFollowerUpdates = createServerFn({ method: "GET" })
     return rows.map(mapVenueUpdate);
   });
 
+export const getNotifications = createServerFn({ method: "GET" })
+  .inputValidator((data: { userId?: string }) => data)
+  .handler(async ({ data }): Promise<NotificationSummary[]> => {
+    const userId = await getOptionalAuthenticatedUserId(data.userId);
+    if (!userId) return [];
+
+    const sql = await getSql();
+    if (!sql) return [];
+    await ensureNotificationsSchema(sql);
+    await materializeDueEventReminderNotifications(sql, userId);
+
+    const rows = await sql`
+      SELECT
+        id,
+        type,
+        title,
+        body,
+        target_type,
+        target_id,
+        route,
+        image_url,
+        read_at,
+        created_at
+      FROM public.notifications
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC
+      LIMIT 50
+    `;
+
+    return rows.map(mapNotification);
+  });
+
 export const getUnreadNotificationCount = createServerFn({ method: "GET" })
   .inputValidator((data: { userId?: string }) => data)
   .handler(async ({ data }): Promise<number> => {
@@ -2523,26 +2727,14 @@ export const getUnreadNotificationCount = createServerFn({ method: "GET" })
 
     const sql = await getSql();
     if (!sql) return 0;
-    await ensureNotificationReadsSchema(sql);
+    await ensureNotificationsSchema(sql);
+    await materializeDueEventReminderNotifications(sql, userId);
 
     const rows = await sql`
-      SELECT
-        (
-          SELECT COUNT(DISTINCT vu.id)::int
-          FROM public.venue_updates vu
-          JOIN public.venue_followers vf ON vf.venue_id = vu.venue_id
-          LEFT JOIN public.user_notification_reads unr ON unr.user_id = vf.user_id
-          WHERE vf.user_id = ${userId}
-            AND vu.created_at > COALESCE(unr.last_seen_at, '-infinity'::timestamptz)
-        ) + (
-          SELECT COUNT(DISTINCT se.event_id)::int
-          FROM public.saved_events se
-          JOIN public.events e ON e.id = se.event_id
-          WHERE se.user_id = ${userId}
-            AND e.status = 'published'
-            AND e.starts_at > now()
-            AND e.starts_at <= now() + interval '24 hours'
-        ) AS unread_count
+      SELECT COUNT(*)::int AS unread_count
+      FROM public.notifications
+      WHERE user_id = ${userId}
+        AND read_at IS NULL
     `;
 
     return Number(rows[0]?.unread_count ?? 0);
@@ -2557,6 +2749,7 @@ export const markNotificationsSeen = createServerFn({ method: "POST" })
     const sql = await getSql();
     if (!sql) return;
     await ensureNotificationReadsSchema(sql);
+    await ensureNotificationsSchema(sql);
 
     await sql`
       INSERT INTO public.user_notification_reads (user_id, last_seen_at, updated_at)
@@ -2564,6 +2757,35 @@ export const markNotificationsSeen = createServerFn({ method: "POST" })
       ON CONFLICT (user_id) DO UPDATE SET
         last_seen_at = EXCLUDED.last_seen_at,
         updated_at = EXCLUDED.updated_at
+    `;
+
+    await sql`
+      UPDATE public.notifications
+      SET read_at = COALESCE(read_at, now())
+      WHERE user_id = ${userId}
+        AND read_at IS NULL
+    `;
+  });
+
+export const registerPushToken = createServerFn({ method: "POST" })
+  .inputValidator((data: { userId?: string; token?: string; platform?: PushPlatform }) => data)
+  .handler(async ({ data }): Promise<void> => {
+    const userId = await getOptionalAuthenticatedUserId(data.userId);
+    const token = data.token?.trim();
+    const platform = data.platform;
+    if (!userId || !token || !platform) return;
+
+    const sql = await getSql();
+    if (!sql) return;
+    await ensureNotificationsSchema(sql);
+
+    await sql`
+      INSERT INTO public.push_tokens (user_id, token, platform, last_seen_at)
+      VALUES (${userId}, ${token}, ${platform}, now())
+      ON CONFLICT (token) DO UPDATE SET
+        user_id = EXCLUDED.user_id,
+        platform = EXCLUDED.platform,
+        last_seen_at = EXCLUDED.last_seen_at
     `;
   });
 
