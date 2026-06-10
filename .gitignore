@@ -38,6 +38,7 @@ dist-ssr
 *.sln
 *.sw?
 
+supabase/migrations
 note.txt
 docs
 .opencode
@@ -50,6 +51,7 @@ supabase/migrations/*
 !supabase/migrations/20260605101500_add_event_recurrence.sql
 !supabase/migrations/20260610120000_add_notifications.sql
 !supabase/migrations/20260610130000_schedule_push_dispatch.sql
+!supabase/migrations/20260610140000_archive_notifications.sql
 supabase/functions/*
 !supabase/functions/dispatch-push-notifications/
 !supabase/functions/dispatch-push-notifications/index.ts

@@ -108,6 +108,7 @@ export interface NotificationSummary {
   route: string;
   image?: string;
   read: boolean;
+  archived: boolean;
   createdAt: string;
 }
 
@@ -549,6 +550,7 @@ function mapNotification(row: Record<string, unknown>): NotificationSummary {
     route: String(row.route),
     image: row.image_url ? String(row.image_url) : undefined,
     read: Boolean(row.read_at),
+    archived: Boolean(row.archived_at),
     createdAt: String(row.created_at),
   };
 }
@@ -756,10 +758,16 @@ async function ensureNotificationsSchema(sql: SqlClient) {
       image_url text,
       metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
       read_at timestamptz,
+      archived_at timestamptz,
       pushed_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(),
       CONSTRAINT notifications_user_unique_key_unique UNIQUE (user_id, unique_key)
     )
+  `;
+
+  await sql`
+    ALTER TABLE public.notifications
+    ADD COLUMN IF NOT EXISTS archived_at timestamptz
   `;
 
   await sql`
@@ -779,9 +787,15 @@ async function ensureNotificationsSchema(sql: SqlClient) {
   `;
 
   await sql`
+    CREATE INDEX IF NOT EXISTS notifications_user_active_created_idx
+    ON public.notifications (user_id, created_at DESC)
+    WHERE archived_at IS NULL
+  `;
+
+  await sql`
     CREATE INDEX IF NOT EXISTS notifications_user_unread_idx
     ON public.notifications (user_id, created_at DESC)
-    WHERE read_at IS NULL
+    WHERE read_at IS NULL AND archived_at IS NULL
   `;
 
   await sql`
@@ -2716,9 +2730,11 @@ export const getNotifications = createServerFn({ method: "GET" })
         route,
         image_url,
         read_at,
+        archived_at,
         created_at
       FROM public.notifications
       WHERE user_id = ${userId}
+        AND archived_at IS NULL
       ORDER BY created_at DESC
       LIMIT 50
     `;
@@ -2742,6 +2758,7 @@ export const getUnreadNotificationCount = createServerFn({ method: "GET" })
       FROM public.notifications
       WHERE user_id = ${userId}
         AND read_at IS NULL
+        AND archived_at IS NULL
     `;
 
     return Number(rows[0]?.unread_count ?? 0);
@@ -2771,6 +2788,44 @@ export const markNotificationsSeen = createServerFn({ method: "POST" })
       SET read_at = COALESCE(read_at, now())
       WHERE user_id = ${userId}
         AND read_at IS NULL
+    `;
+  });
+
+export const archiveNotification = createServerFn({ method: "POST" })
+  .inputValidator((data: { userId?: string; notificationId?: string }) => data)
+  .handler(async ({ data }): Promise<void> => {
+    const userId = await getOptionalAuthenticatedUserId(data.userId);
+    const notificationId = data.notificationId?.trim();
+    if (!userId || !notificationId) return;
+
+    const sql = await getSql();
+    if (!sql) return;
+    await ensureNotificationsSchema(sql);
+
+    await sql`
+      UPDATE public.notifications
+      SET archived_at = COALESCE(archived_at, now())
+      WHERE id = ${notificationId}::uuid
+        AND user_id = ${userId}
+    `;
+  });
+
+export const archiveReadNotifications = createServerFn({ method: "POST" })
+  .inputValidator((data: { userId?: string }) => data)
+  .handler(async ({ data }): Promise<void> => {
+    const userId = await getOptionalAuthenticatedUserId(data.userId);
+    if (!userId) return;
+
+    const sql = await getSql();
+    if (!sql) return;
+    await ensureNotificationsSchema(sql);
+
+    await sql`
+      UPDATE public.notifications
+      SET archived_at = COALESCE(archived_at, now())
+      WHERE user_id = ${userId}
+        AND read_at IS NOT NULL
+        AND archived_at IS NULL
     `;
   });
 
