@@ -163,6 +163,8 @@ async function sendFcmNotification(
             priority: "HIGH",
             notification: {
               channel_id: "default",
+              color: "#F13A5A",
+              icon: "ic_stat_chegaai_notification",
             },
           },
         },
