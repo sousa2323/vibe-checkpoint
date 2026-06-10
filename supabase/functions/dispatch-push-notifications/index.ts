@@ -17,6 +17,14 @@ type PushTokenRow = {
   token: string;
 };
 
+type FirebaseServiceAccount = {
+  client_email: string;
+  private_key: string;
+  project_id: string;
+};
+
+let cachedAccessToken: { token: string; expiresAt: number } | null = null;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -39,13 +47,26 @@ serve(async (request) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const fcmServerKey = Deno.env.get("FCM_SERVER_KEY");
+  const serviceAccountJson = Deno.env.get("FIREBASE_SERVICE_ACCOUNT_JSON");
 
-  if (!supabaseUrl || !serviceRoleKey || !fcmServerKey) {
+  if (!supabaseUrl || !serviceRoleKey || !serviceAccountJson) {
     return json(
-      { error: "Missing SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, or FCM_SERVER_KEY" },
+      {
+        error: "Missing SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, or FIREBASE_SERVICE_ACCOUNT_JSON",
+      },
       500,
     );
+  }
+
+  let serviceAccount: FirebaseServiceAccount;
+  try {
+    serviceAccount = JSON.parse(serviceAccountJson) as FirebaseServiceAccount;
+  } catch (_error) {
+    return json({ error: "Invalid FIREBASE_SERVICE_ACCOUNT_JSON" }, 500);
+  }
+
+  if (!serviceAccount.client_email || !serviceAccount.private_key || !serviceAccount.project_id) {
+    return json({ error: "Incomplete FIREBASE_SERVICE_ACCOUNT_JSON" }, 500);
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -78,7 +99,7 @@ serve(async (request) => {
     }
 
     const results = await Promise.all(
-      tokens.map(({ token }) => sendFcmNotification(fcmServerKey, token, notification)),
+      tokens.map(({ token }) => sendFcmNotification(serviceAccount, token, notification)),
     );
 
     const delivered = results.some((result) => result.ok);
@@ -105,42 +126,139 @@ serve(async (request) => {
 });
 
 async function sendFcmNotification(
-  fcmServerKey: string,
+  serviceAccount: FirebaseServiceAccount,
   token: string,
   notification: NotificationRow,
 ) {
-  const response = await fetch("https://fcm.googleapis.com/fcm/send", {
-    method: "POST",
-    headers: {
-      Authorization: `key=${fcmServerKey}`,
-      "Content-Type": "application/json",
+  const accessToken = await getFirebaseAccessToken(serviceAccount);
+  const response = await fetch(
+    `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: {
+          token,
+          notification: {
+            title: notification.title,
+            body: notification.body,
+            image: notification.image_url ?? undefined,
+          },
+          data: {
+            notificationId: notification.id,
+            route: notification.route,
+            targetType: notification.target_type,
+            targetId: notification.target_id,
+          },
+          android: {
+            priority: "HIGH",
+            notification: {
+              channel_id: "default",
+            },
+          },
+        },
+      }),
     },
-    body: JSON.stringify({
-      to: token,
-      notification: {
-        title: notification.title,
-        body: notification.body,
-        image: notification.image_url ?? undefined,
-      },
-      data: {
-        notificationId: notification.id,
-        route: notification.route,
-        targetType: notification.target_type,
-        targetId: notification.target_id,
-      },
+  );
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const errorCode = payload?.error?.details?.find((detail: { errorCode?: string }) =>
+      Boolean(detail.errorCode),
+    )?.errorCode;
+
+    return {
+      ok: false,
+      token,
+      invalidToken: errorCode === "UNREGISTERED" || errorCode === "INVALID_ARGUMENT",
+    };
+  }
+
+  return {
+    ok: Boolean(payload?.name),
+    token,
+    invalidToken: false,
+  };
+}
+
+async function getFirebaseAccessToken(serviceAccount: FirebaseServiceAccount) {
+  const now = Math.floor(Date.now() / 1000);
+  if (cachedAccessToken && cachedAccessToken.expiresAt - 60 > now) {
+    return cachedAccessToken.token;
+  }
+
+  const jwt = await createServiceAccountJwt(serviceAccount, now);
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: jwt,
     }),
   });
 
-  if (!response.ok) return { ok: false, token, invalidToken: false };
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload?.error_description ?? "Firebase auth failed");
 
-  const payload = await response.json().catch(() => null);
-  const error = payload?.results?.[0]?.error;
-
-  return {
-    ok: Boolean(payload?.success),
-    token,
-    invalidToken: error === "NotRegistered" || error === "InvalidRegistration",
+  cachedAccessToken = {
+    token: payload.access_token,
+    expiresAt: now + Number(payload.expires_in ?? 3600),
   };
+
+  return cachedAccessToken.token;
+}
+
+async function createServiceAccountJwt(serviceAccount: FirebaseServiceAccount, issuedAt: number) {
+  const header = { alg: "RS256", typ: "JWT" };
+  const claims = {
+    iss: serviceAccount.client_email,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: issuedAt,
+    exp: issuedAt + 3600,
+  };
+
+  const unsignedJwt = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(
+    JSON.stringify(claims),
+  )}`;
+  const key = await crypto.subtle.importKey(
+    "pkcs8",
+    pemToArrayBuffer(serviceAccount.private_key),
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    new TextEncoder().encode(unsignedJwt),
+  );
+
+  return `${unsignedJwt}.${base64UrlEncode(signature)}`;
+}
+
+function pemToArrayBuffer(pem: string) {
+  const base64 = pem
+    .replace("-----BEGIN PRIVATE KEY-----", "")
+    .replace("-----END PRIVATE KEY-----", "")
+    .replace(/\s/g, "");
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes.buffer;
+}
+
+function base64UrlEncode(value: string | ArrayBuffer) {
+  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : new Uint8Array(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
 function json(body: unknown, status = 200) {
