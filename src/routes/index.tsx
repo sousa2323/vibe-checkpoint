@@ -20,11 +20,25 @@ import {
 import { useEffect, useState, type CSSProperties } from "react";
 import { authClient } from "@/auth";
 
+declare global {
+  interface Window {
+    __CHEGAAI_NATIVE_SHELL?: boolean;
+  }
+}
+
 export const Route = createFileRoute("/")({
   component: Entry,
 });
 
 const nativeOrigins = new Set(["https://localhost", "capacitor://localhost"]);
+
+function isNativeShell() {
+  if (typeof window !== "undefined") {
+    return window.__CHEGAAI_NATIVE_SHELL === true || nativeOrigins.has(window.location.origin);
+  }
+
+  return process.env.CHEGAAI_CAPACITOR_RENDER === "1";
+}
 
 const imageUrls = {
   concert:
@@ -57,15 +71,13 @@ function BrandLogo({ className }: { className: string }) {
 }
 
 function Entry() {
-  const [isNativeShell, setIsNativeShell] = useState(() =>
-    typeof window === "undefined" ? false : nativeOrigins.has(window.location.origin),
-  );
+  const [nativeShell, setNativeShell] = useState(isNativeShell);
 
   useEffect(() => {
-    setIsNativeShell(nativeOrigins.has(window.location.origin));
+    setNativeShell(isNativeShell());
   }, []);
 
-  if (isNativeShell) return <NativeSplash />;
+  if (nativeShell) return <NativeSplash />;
 
   return <WebLanding />;
 }
@@ -88,15 +100,12 @@ function NativeSplash() {
       seen = false;
     }
 
-    const timeoutId = setTimeout(() => {
-      if (user?.id) {
-        navigate({ to: "/post-auth", replace: true });
-        return;
-      }
+    if (user?.id) {
+      navigate({ to: "/post-auth", replace: true });
+      return;
+    }
 
-      navigate({ to: seen ? "/auth" : "/onboarding", replace: true });
-    }, 250);
-    return () => clearTimeout(timeoutId);
+    navigate({ to: seen ? "/auth" : "/onboarding", replace: true });
   }, [isPending, navigate, user?.id]);
 
   return (

@@ -7,6 +7,9 @@ type AuthSessionData = {
   user: Pick<User, "id" | "email" | "user_metadata">;
 };
 
+let cachedSessionData: AuthSessionData | null | undefined;
+let currentSessionPromise: Promise<AuthSessionData | null> | null = null;
+
 export function getAuthUserName(user: AuthSessionData["user"] | null | undefined) {
   const metadata = user?.user_metadata;
   const name = metadata?.name ?? metadata?.full_name;
@@ -33,7 +36,7 @@ function writeAccessTokenCookie(session: Session | null) {
   )}; Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`;
 }
 
-async function getCurrentSession() {
+async function fetchCurrentSession() {
   const supabase = getSupabaseBrowserClient();
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
@@ -41,12 +44,28 @@ async function getCurrentSession() {
   return toAuthSessionData(data.session);
 }
 
+async function getCurrentSession({ force = false }: { force?: boolean } = {}) {
+  if (!force && cachedSessionData !== undefined) return cachedSessionData;
+  if (!force && currentSessionPromise) return currentSessionPromise;
+
+  currentSessionPromise = fetchCurrentSession()
+    .then((sessionData) => {
+      cachedSessionData = sessionData;
+      return sessionData;
+    })
+    .finally(() => {
+      currentSessionPromise = null;
+    });
+
+  return currentSessionPromise;
+}
+
 function useSession() {
   const [data, setData] = useState<AuthSessionData | null>(null);
   const [isPending, setIsPending] = useState(true);
 
   const refetch = async () => {
-    const sessionData = await getCurrentSession();
+    const sessionData = await getCurrentSession({ force: true });
     setData(sessionData);
     setIsPending(false);
     return { data: sessionData };
@@ -56,16 +75,16 @@ function useSession() {
     let isMounted = true;
     const supabase = getSupabaseBrowserClient();
 
-    supabase.auth.getSession().then(({ data: sessionResult }) => {
+    getCurrentSession().then((sessionData) => {
       if (!isMounted) return;
-      writeAccessTokenCookie(sessionResult.session);
-      setData(toAuthSessionData(sessionResult.session));
+      setData(sessionData);
       setIsPending(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       writeAccessTokenCookie(session);
-      setData(toAuthSessionData(session));
+      cachedSessionData = toAuthSessionData(session);
+      setData(cachedSessionData);
       setIsPending(false);
     });
 
@@ -87,7 +106,8 @@ export const authClient = {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       writeAccessTokenCookie(data.session);
-      return { data: toAuthSessionData(data.session) };
+      cachedSessionData = toAuthSessionData(data.session);
+      return { data: cachedSessionData };
     },
   },
   signUp: {
@@ -104,7 +124,8 @@ export const authClient = {
       const { data, error } = await supabase.auth.signUp({ email, password, options });
       if (error) throw error;
       writeAccessTokenCookie(data.session);
-      return { data: toAuthSessionData(data.session), needsEmailConfirmation: !data.session };
+      cachedSessionData = toAuthSessionData(data.session);
+      return { data: cachedSessionData, needsEmailConfirmation: !data.session };
     },
   },
   resetPassword: {
@@ -120,7 +141,8 @@ export const authClient = {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) throw error;
     writeAccessTokenCookie(data.session);
-    return { data: toAuthSessionData(data.session) };
+    cachedSessionData = toAuthSessionData(data.session);
+    return { data: cachedSessionData };
   },
   updatePassword: async ({ password }: { password: string }) => {
     const supabase = getSupabaseBrowserClient();
@@ -132,6 +154,7 @@ export const authClient = {
     const supabase = getSupabaseBrowserClient();
     const { error } = await supabase.auth.signOut();
     writeAccessTokenCookie(null);
+    cachedSessionData = null;
     if (error) throw error;
   },
 };
