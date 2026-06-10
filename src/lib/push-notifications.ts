@@ -49,6 +49,18 @@ export async function registerNativePushNotifications({
     const permission = await PushNotifications.requestPermissions();
     if (permission.receive !== "granted") return;
 
+    if (Capacitor.getPlatform() === "android") {
+      await PushNotifications.createChannel({
+        id: "default",
+        name: "Novidades",
+        description: "Notificações de novidades, eventos e avisos do ChegaAi",
+        importance: 4,
+        visibility: 1,
+        vibration: true,
+        lights: true,
+      });
+    }
+
     await PushNotifications.register();
   } catch {
     registeredUserId = undefined;

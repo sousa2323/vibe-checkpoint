@@ -85,6 +85,7 @@ serve(async (request) => {
 
   let sent = 0;
   let failed = 0;
+  const errors: string[] = [];
 
   for (const notification of notifications ?? []) {
     const { data: tokens, error: tokenError } = await supabase
@@ -105,6 +106,11 @@ serve(async (request) => {
     const delivered = results.some((result) => result.ok);
     sent += results.filter((result) => result.ok).length;
     failed += results.filter((result) => !result.ok).length;
+    for (const result of results) {
+      if (!result.ok && result.error && errors.length < 5) {
+        errors.push(result.error);
+      }
+    }
 
     const invalidTokens = results
       .filter((result) => result.invalidToken)
@@ -122,7 +128,7 @@ serve(async (request) => {
     }
   }
 
-  return json({ sent, failed, notifications: notifications?.length ?? 0 });
+  return json({ sent, failed, notifications: notifications?.length ?? 0, errors });
 });
 
 async function sendFcmNotification(
@@ -142,11 +148,11 @@ async function sendFcmNotification(
       body: JSON.stringify({
         message: {
           token,
-          notification: {
+          notification: compact({
             title: notification.title,
             body: notification.body,
-            image: notification.image_url ?? undefined,
-          },
+            image: notification.image_url,
+          }),
           data: {
             notificationId: notification.id,
             route: notification.route,
@@ -175,6 +181,7 @@ async function sendFcmNotification(
       ok: false,
       token,
       invalidToken: errorCode === "UNREGISTERED" || errorCode === "INVALID_ARGUMENT",
+      error: errorCode ?? payload?.error?.status ?? payload?.error?.message ?? "FCM_SEND_FAILED",
     };
   }
 
@@ -182,7 +189,16 @@ async function sendFcmNotification(
     ok: Boolean(payload?.name),
     token,
     invalidToken: false,
+    error: payload?.name ? undefined : "FCM_EMPTY_RESPONSE",
   };
+}
+
+function compact<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      ([, entry]) => entry !== null && entry !== undefined && entry !== "",
+    ),
+  );
 }
 
 async function getFirebaseAccessToken(serviceAccount: FirebaseServiceAccount) {
