@@ -2478,7 +2478,10 @@ export const toggleCheckin = createServerFn({ method: "POST" })
     if (eventRows.length === 0) throw new Error("Evento não encontrado.");
     if (!eventRows[0]?.actions_available) throw new Error("Check-in encerrado para esse evento.");
 
-    const occurrenceStartsAt = String(eventRows[0].starts_at);
+    const occurrenceStartsAt =
+      eventRows[0].starts_at instanceof Date
+        ? eventRows[0].starts_at.toISOString()
+        : String(eventRows[0].starts_at);
 
     const existing = await sql`
         SELECT 1
@@ -2602,6 +2605,10 @@ export const createVenueUpdate = createServerFn({ method: "POST" })
       RETURNING id, venue_id, title, body, kind, created_at
     `;
     const updateId = String(rows[0].id);
+    const updateCreatedAt =
+      rows[0].created_at instanceof Date
+        ? rows[0].created_at.toISOString()
+        : String(rows[0].created_at);
 
     await ensureNotificationsSchema(sql);
     await sql`
@@ -2627,7 +2634,7 @@ export const createVenueUpdate = createServerFn({ method: "POST" })
         v.id::text,
         '/venues/' || v.id::text,
         v.cover_image_url,
-        ${String(rows[0].created_at)}::timestamptz
+        ${updateCreatedAt}::timestamptz
       FROM public.venue_followers vf
       JOIN public.venues v ON v.id = vf.venue_id
       WHERE vf.venue_id = ${String(venue.id)}
