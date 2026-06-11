@@ -20,21 +20,21 @@ function PrivacyPolicy() {
         <h1 className="mt-3 text-3xl font-black tracking-tight">Política de Privacidade</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
           Última atualização: {updatedAt}. Este documento explica, de forma direta, quais dados
-          tratamos no app web e nativo do ChegaAí e como você pode exercer seus direitos pela LGPD.
+          tratamos no app ChegaAí e como você pode exercer seus direitos pela LGPD.
         </p>
 
         <div className="mt-8 space-y-6 text-sm leading-relaxed">
           <Section title="1. Dados que coletamos">
-            Coletamos dados de conta, como nome, email, senha autenticada pelo Supabase e tipo de
-            conta. Também tratamos informações que você publica ou informa no app, como foto de
-            perfil, avaliações, check-ins, eventos salvos, comentários, posts, grupos e dados de
+            Coletamos dados de conta, como nome, email, credenciais protegidas e tipo de conta.
+            Também tratamos informações que você publica ou informa no app, como foto de perfil,
+            avaliações, check-ins, eventos salvos, comentários, posts, grupos e dados de
             estabelecimento quando você gerencia um local.
           </Section>
 
           <Section title="2. Localização">
-            A localização é usada para mostrar bares, eventos e lugares próximos. No navegador ou
-            app nativo, a permissão é solicitada antes do uso. Guardamos uma localização recente e a
-            preferência de raio no armazenamento local do seu dispositivo para melhorar a
+            A localização é usada para mostrar bares, eventos e lugares próximos. No app, a
+            permissão de localização é solicitada antes do uso. Guardamos uma localização recente e
+            a preferência de raio no armazenamento local do seu dispositivo para melhorar a
             experiência. Você pode limpar esses dados na tela de Perfil.
           </Section>
 
@@ -51,8 +51,8 @@ function PrivacyPolicy() {
           </Section>
 
           <Section title="5. Compartilhamento e fornecedores">
-            Usamos fornecedores de infraestrutura e autenticação, incluindo Supabase, hospedagem e
-            serviços necessários para operar o produto. Não vendemos seus dados pessoais.
+            Usamos fornecedores de infraestrutura, autenticação, banco de dados, notificações e
+            hospedagem necessários para operar o produto. Não vendemos seus dados pessoais.
           </Section>
 
           <Section title="6. Armazenamento local, cookies e tokens">
@@ -80,10 +80,6 @@ function PrivacyPolicy() {
           </Section>
         </div>
 
-        <div className="mt-10 rounded-3xl bg-muted p-5 text-sm leading-relaxed text-muted-foreground">
-          Esta política é um ponto de partida operacional para transparência e consentimento. Ela
-          deve ser revisada por assessoria jurídica antes de produção comercial ampla.
-        </div>
       </article>
     </main>
   );
