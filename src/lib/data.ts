@@ -70,6 +70,7 @@ export interface VenueSummary {
 export interface VenueReward {
   id: string;
   venueId: string;
+  eventId?: string;
   action: "checkin" | "save" | "share" | "follow";
   title: string;
   description: string;
@@ -394,6 +395,7 @@ type UpsertEventReviewInput = {
 
 type UpsertRewardInput = {
   userId: string;
+  eventId?: string;
   title: string;
   description: string;
   action: VenueReward["action"];
@@ -468,6 +470,7 @@ function mapReward(row: Record<string, unknown> | undefined): VenueReward | null
   return {
     id: String(row.reward_id),
     venueId: String(row.reward_venue_id ?? row.venue_id),
+    eventId: row.reward_event_id ? String(row.reward_event_id) : undefined,
     action: String(row.reward_action ?? "checkin") as VenueReward["action"],
     title: String(row.reward_title),
     description: String(row.reward_description ?? ""),
@@ -971,8 +974,17 @@ function mapVenue(row: Record<string, unknown>): VenueSummary {
   };
 }
 
-async function ensureRewardsSchema(_sql: SqlClient) {
-  return;
+async function ensureRewardsSchema(sql: SqlClient) {
+  await sql`
+    ALTER TABLE public.venue_rewards
+    ADD COLUMN IF NOT EXISTS event_id uuid REFERENCES public.events(id) ON DELETE SET NULL
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS venue_rewards_event_status_idx
+    ON public.venue_rewards (event_id, status, updated_at DESC)
+    WHERE event_id IS NOT NULL
+  `;
 }
 
 let rewardRedemptionsSchemaReady = false;
@@ -1051,6 +1063,10 @@ async function ensureRewardRedemptionsSchema(sql: SqlClient) {
       FOR UPDATE;
 
       IF NOT FOUND THEN
+        RETURN NULL;
+      END IF;
+
+      IF v_reward.event_id IS NOT NULL AND v_reward.event_id IS DISTINCT FROM p_event_id THEN
         RETURN NULL;
       END IF;
 
@@ -1183,15 +1199,17 @@ async function claimRewardForAction(
     WHERE venue_id = ${input.venueId}
       AND action = ${input.action}
       AND status = 'active'
+      AND (event_id IS NULL OR event_id = ${input.eventId ?? null})
       AND (valid_until IS NULL OR valid_until > now())
-    ORDER BY updated_at DESC
+    ORDER BY CASE WHEN event_id = ${input.eventId ?? null} THEN 0 ELSE 1 END, updated_at DESC
     LIMIT 1
   `;
-  const rewardId = rewardRows[0]?.id;
+  const rewardId = rewardRows[0]?.id ? String(rewardRows[0].id) : null;
   if (!rewardId) return null;
+  const eventId = input.eventId ?? null;
 
   const rows = await sql`
-    SELECT * FROM public.claim_reward_redemption(${rewardId}, ${input.userId}, ${input.eventId ?? null})
+    SELECT * FROM public.claim_reward_redemption(${rewardId}, ${input.userId}, ${eventId})
   `;
   const row = rows[0];
   if (!row?.id) return null;
@@ -1379,6 +1397,7 @@ export const getVenues = createServerFn({ method: "GET" }).handler(
         COUNT(DISTINCT vf.user_id) AS follower_count,
         r.id AS reward_id,
         r.venue_id AS reward_venue_id,
+        r.event_id AS reward_event_id,
         r.action AS reward_action,
         r.title AS reward_title,
         r.description AS reward_description,
@@ -1420,11 +1439,12 @@ export const getVenues = createServerFn({ method: "GET" }).handler(
         FROM public.venue_rewards vr
         WHERE vr.venue_id = v.id
           AND vr.status = 'active'
+          AND vr.event_id IS NULL
           AND (vr.valid_until IS NULL OR vr.valid_until > now())
         ORDER BY vr.updated_at DESC
         LIMIT 1
       ) r ON true
-      GROUP BY v.id, r.id, r.venue_id, r.action, r.title, r.description, r.status, r.max_redemptions, r.valid_until
+      GROUP BY v.id, r.id, r.venue_id, r.event_id, r.action, r.title, r.description, r.status, r.max_redemptions, r.valid_until
       ORDER BY live_events DESC, checkins DESC, v.name ASC
     `;
 
@@ -2326,6 +2346,7 @@ export const getEventDetails = createServerFn({ method: "GET" })
         v.longitude,
         r.id AS reward_id,
         r.venue_id AS reward_venue_id,
+        r.event_id AS reward_event_id,
         r.action AS reward_action,
         r.title AS reward_title,
         r.description AS reward_description,
@@ -2378,8 +2399,9 @@ export const getEventDetails = createServerFn({ method: "GET" })
         FROM public.venue_rewards vr
         WHERE vr.venue_id = v.id
           AND vr.status = 'active'
+          AND (vr.event_id IS NULL OR vr.event_id = e.id)
           AND (vr.valid_until IS NULL OR vr.valid_until > now())
-        ORDER BY vr.updated_at DESC
+        ORDER BY CASE WHEN vr.event_id = e.id THEN 0 ELSE 1 END, vr.updated_at DESC
         LIMIT 1
       ) r ON true
       LEFT JOIN LATERAL (
@@ -2430,6 +2452,7 @@ export const getVenueDetails = createServerFn({ method: "GET" })
         COUNT(DISTINCT vf.user_id) AS follower_count,
         r.id AS reward_id,
         r.venue_id AS reward_venue_id,
+        r.event_id AS reward_event_id,
         r.action AS reward_action,
         r.title AS reward_title,
         r.description AS reward_description,
@@ -2493,6 +2516,7 @@ export const getVenueDetails = createServerFn({ method: "GET" })
         WHERE vr.venue_id = v.id
           AND vr.status = 'active'
           AND vr.action = 'checkin'
+          AND vr.event_id IS NULL
           AND (vr.valid_until IS NULL OR vr.valid_until > now())
         ORDER BY vr.updated_at DESC
         LIMIT 1
@@ -2506,7 +2530,7 @@ export const getVenueDetails = createServerFn({ method: "GET" })
         LIMIT 1
       ) rr ON true
       WHERE v.id = ${data.venueId}
-      GROUP BY v.id, r.id, r.venue_id, r.action, r.title, r.description, r.status, r.max_redemptions, r.valid_until,
+      GROUP BY v.id, r.id, r.venue_id, r.event_id, r.action, r.title, r.description, r.status, r.max_redemptions, r.valid_until,
         rr.id, rr.reward_id, rr.venue_id, rr.event_id, rr.code, rr.status, rr.created_at, rr.redeemed_at
       LIMIT 1
     `;
@@ -2561,6 +2585,7 @@ export const getVenueDetails = createServerFn({ method: "GET" })
           v.longitude,
           r.id AS reward_id,
           r.venue_id AS reward_venue_id,
+          r.event_id AS reward_event_id,
           r.action AS reward_action,
           r.title AS reward_title,
           r.description AS reward_description,
@@ -2614,8 +2639,9 @@ export const getVenueDetails = createServerFn({ method: "GET" })
           WHERE vr.venue_id = v.id
             AND vr.status = 'active'
             AND vr.action = 'checkin'
+            AND (vr.event_id IS NULL OR vr.event_id = e.id)
             AND (vr.valid_until IS NULL OR vr.valid_until > now())
-          ORDER BY vr.updated_at DESC
+          ORDER BY CASE WHEN vr.event_id = e.id THEN 0 ELSE 1 END, vr.updated_at DESC
           LIMIT 1
         ) r ON true
         LEFT JOIN LATERAL (
@@ -2857,6 +2883,7 @@ export const toggleCheckin = createServerFn({ method: "POST" })
             AND vr.action = 'checkin'
             AND rr.user_id = ${userId}
             AND rr.venue_id = ${data.venueId}
+            AND rr.event_id = ${data.eventId}
             AND rr.status = 'pending'
         `;
 
@@ -2970,16 +2997,31 @@ export const upsertOwnerReward = createServerFn({ method: "POST" })
     `;
     const venue = venues[0];
     if (!venue) throw new Error("Cadastre seu estabelecimento antes de criar recompensas.");
+    const venueId = String(venue.id);
+    const eventId = data.eventId?.trim() || null;
+
+    if (eventId) {
+      const events = await sql`
+        SELECT 1
+        FROM public.events
+        WHERE id = ${eventId}
+          AND venue_id = ${venueId}
+          AND status = 'published'
+        LIMIT 1
+      `;
+      if (!events[0]) throw new Error("Escolha um evento publicado desse estabelecimento.");
+    }
 
     await sql`
       UPDATE public.venue_rewards
       SET status = 'inactive', updated_at = now()
-      WHERE venue_id = ${String(venue.id)}
+      WHERE venue_id = ${venueId}
     `;
 
     const rows = await sql`
       INSERT INTO public.venue_rewards (
         venue_id,
+        event_id,
         action,
         title,
         description,
@@ -2988,7 +3030,8 @@ export const upsertOwnerReward = createServerFn({ method: "POST" })
         valid_until
       )
       VALUES (
-        ${String(venue.id)},
+        ${venueId},
+        ${eventId},
         ${data.action},
         ${data.title.trim()},
         ${data.description.trim()},
@@ -2999,6 +3042,7 @@ export const upsertOwnerReward = createServerFn({ method: "POST" })
       RETURNING
         id AS reward_id,
         venue_id AS reward_venue_id,
+        event_id AS reward_event_id,
         action AS reward_action,
         title AS reward_title,
         description AS reward_description,
@@ -3599,6 +3643,7 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
         SELECT
           id AS reward_id,
           venue_id AS reward_venue_id,
+          event_id AS reward_event_id,
           action AS reward_action,
           title AS reward_title,
           description AS reward_description,

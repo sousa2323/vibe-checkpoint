@@ -20,7 +20,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { authClient } from "@/auth";
 import { AppCurrencyField, AppDateTimeField, AppSelect } from "@/components/app-form-controls";
 import { EventCard } from "@/components/event-card";
@@ -363,6 +363,7 @@ function VenueDashboard() {
       | "share"
       | "follow";
     const statusValue = String(formData.get("status") ?? "active") as "active" | "inactive";
+    const eventIdValue = String(formData.get("eventId") ?? "__all__");
     const maxRedemptionsValue = String(formData.get("maxRedemptions") ?? "").trim();
     const validUntil = String(formData.get("validUntil") ?? "");
     const maxRedemptions = maxRedemptionsValue ? Number(maxRedemptionsValue) : undefined;
@@ -387,6 +388,7 @@ function VenueDashboard() {
           description,
           action,
           status: statusValue,
+          eventId: eventIdValue === "__all__" ? undefined : eventIdValue,
           maxRedemptions,
           validUntil: validUntil || undefined,
         },
@@ -598,7 +600,13 @@ function VenueDashboard() {
 
       {venue ? <FollowerUpdatePanel updates={dashboard.updates} onSubmit={submitUpdate} /> : null}
 
-      {venue ? <RewardPanel reward={dashboard.reward ?? null} onSubmit={submitReward} /> : null}
+      {venue ? (
+        <RewardPanel
+          reward={dashboard.reward ?? null}
+          events={dashboard.events}
+          onSubmit={submitReward}
+        />
+      ) : null}
 
       {venue ? (
         <RedeemCodePanel
@@ -889,13 +897,22 @@ function FollowerUpdatePanel({
 
 function RewardPanel({
   reward,
+  events,
   onSubmit,
 }: {
   reward: OwnerDashboard["reward"];
+  events: EventSummary[];
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const rewardId = reward?.id;
   const isFlashReward = Boolean(reward?.validUntil || reward?.maxRedemptions);
+  const eventOptions = useMemo(
+    () => [
+      { value: "__all__", label: "Todos os eventos do local" },
+      ...events.map((event) => ({ value: event.id, label: `${event.title} · ${event.date}` })),
+    ],
+    [events],
+  );
 
   return (
     <section className="mt-5 px-6">
@@ -926,6 +943,13 @@ function RewardPanel({
             Para virar relâmpago, preencha uma validade, um limite de resgates ou os dois. Esses
             dados aparecem no app e no convite compartilhado.
           </div>
+          <AppSelect
+            label="Onde essa promoção vale"
+            name="eventId"
+            defaultValue={reward?.eventId ?? "__all__"}
+            triggerClassName="border-border"
+            options={eventOptions}
+          />
           <label className="block">
             <span className="text-sm font-semibold">Como resgatar</span>
             <textarea
