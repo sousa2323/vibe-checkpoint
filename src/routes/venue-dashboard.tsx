@@ -11,6 +11,7 @@ import {
   MapPin,
   Megaphone,
   Pencil,
+  ScanLine,
   Settings,
   Share2,
   Star,
@@ -26,6 +27,7 @@ import { EventCard } from "@/components/event-card";
 import { NativeFeedback } from "@/components/native-feedback";
 import { OwnerNav } from "@/components/owner-nav";
 import { PillButton } from "@/components/pill-button";
+import { QrScannerDialog } from "@/components/qr-scanner-dialog";
 import { SwipeCollapseCard } from "@/components/swipe-collapse-card";
 import {
   Dialog,
@@ -998,11 +1000,19 @@ function RedeemCodePanel({
   onSubmit: (code: string) => Promise<boolean>;
 }) {
   const [code, setCode] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const redeemed = await onSubmit(code);
     if (redeemed) setCode("");
+  }
+
+  function handleScan(scanned: string) {
+    setCode(scanned);
+    void onSubmit(scanned).then((redeemed) => {
+      if (redeemed) setCode("");
+    });
   }
 
   return (
@@ -1043,10 +1053,24 @@ function RedeemCodePanel({
             aria-label="Código de resgate do cliente"
             className="h-12 min-w-0 flex-1 rounded-full border border-border bg-background px-4 text-center font-mono text-lg font-black uppercase tracking-[0.3em] outline-none placeholder:text-muted-foreground/40"
           />
+          <button
+            type="button"
+            onClick={() => setScannerOpen(true)}
+            aria-label="Escanear QR code do cliente"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted"
+          >
+            <ScanLine className="h-5 w-5" />
+          </button>
           <PillButton type="submit" disabled={busy || code.length !== 6} className="shrink-0">
             {busy ? "Validando..." : "Validar"}
           </PillButton>
         </form>
+
+        <QrScannerDialog
+          open={scannerOpen}
+          onClose={() => setScannerOpen(false)}
+          onScan={handleScan}
+        />
 
         {feedback ? (
           <p
