@@ -1,4 +1,6 @@
 import { Gift, Sparkles } from "lucide-react";
+import { RewardCodeCard } from "@/components/reward-code-card";
+import type { RewardRedemptionSummary } from "@/lib/data";
 
 export function CheckinReward({
   reward,
@@ -6,12 +8,14 @@ export function CheckinReward({
   actionLabel,
   meta,
   unlocked,
+  redemption,
 }: {
   reward: string | null;
   description?: string | null;
   actionLabel?: string;
   meta?: string[];
   unlocked: boolean;
+  redemption?: RewardRedemptionSummary | null;
 }) {
   if (!reward) {
     return (
@@ -47,11 +51,20 @@ export function CheckinReward({
               ))}
             </div>
           ) : null}
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            {unlocked
-              ? (description ?? "Mostre essa tela no local para resgatar.")
-              : "Faça check-in quando chegar e libere essa vantagem."}
-          </p>
+          {unlocked && redemption ? (
+            <>
+              {description ? (
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{description}</p>
+              ) : null}
+              <RewardCodeCard redemption={redemption} />
+            </>
+          ) : (
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              {unlocked
+                ? (description ?? "Mostre essa tela no local para resgatar.")
+                : "Faça check-in quando chegar e libere essa vantagem."}
+            </p>
+          )}
         </div>
       </div>
     </div>

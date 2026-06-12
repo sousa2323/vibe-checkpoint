@@ -129,6 +129,7 @@ function EventDetailPage() {
         ? {
             ...current,
             checkedIn: result.checkedIn,
+            redemption: result.redemption,
             going: Math.max(0, current.going + (result.checkedIn ? 1 : -1)),
           }
         : current,
@@ -139,11 +140,13 @@ function EventDetailPage() {
       })
       .catch(() => undefined);
     setStatus(
-      result.checkedIn && reward
-        ? `Check-in registrado. Benefício liberado: ${reward}.`
-        : result.checkedIn
-          ? "Check-in registrado."
-          : "Check-in desfeito.",
+      result.checkedIn && result.redemption
+        ? `Check-in registrado. Seu código de resgate: ${result.redemption.code}.`
+        : result.checkedIn && reward
+          ? `Check-in registrado. Benefício liberado: ${reward}.`
+          : result.checkedIn
+            ? "Check-in registrado."
+            : "Check-in desfeito.",
     );
   }
 
@@ -268,6 +271,7 @@ function EventDetailPage() {
           actionLabel={rewardActionLabel}
           meta={rewardMeta}
           unlocked={checkedIn}
+          redemption={event.redemption}
         />
 
         <div className="mt-6 grid grid-cols-3 gap-2">

@@ -123,6 +123,7 @@ function VenueDetailPage() {
           ? {
               ...event,
               checkedIn: result.checkedIn,
+              redemption: result.redemption,
               going: Math.max(0, event.going + (result.checkedIn ? 1 : -1)),
             }
           : event,
@@ -133,11 +134,13 @@ function VenueDetailPage() {
       .catch(() => undefined);
     const reward = getCheckinReward(detail.venue);
     setStatus(
-      result.checkedIn && reward
-        ? `Check-in registrado. Benefício liberado: ${reward}.`
-        : result.checkedIn
-          ? "Check-in registrado."
-          : "Check-in desfeito.",
+      result.checkedIn && result.redemption
+        ? `Check-in registrado. Seu código de resgate: ${result.redemption.code}.`
+        : result.checkedIn && reward
+          ? `Check-in registrado. Benefício liberado: ${reward}.`
+          : result.checkedIn
+            ? "Check-in registrado."
+            : "Check-in desfeito.",
     );
   }
 

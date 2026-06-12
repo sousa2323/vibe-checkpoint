@@ -55,6 +55,7 @@ export type AdminUserSummary = {
   userId: string;
   accountType: string | null;
   displayName: string | null;
+  avatarUrl: string | null;
   email: string | null;
   createdAt: string | null;
   lastActivityAt: string | null;
@@ -62,7 +63,6 @@ export type AdminUserSummary = {
 
 export type AdminUserDetail = {
   profile: AdminUserSummary & {
-    avatarUrl: string | null;
     onboardingCompleted: boolean;
   };
   counts: {
@@ -143,7 +143,7 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
           LIMIT 30
         `,
       sql`
-          SELECT up.user_id, up.account_type, up.display_name, au.email, up.created_at,
+          SELECT up.user_id, up.account_type, up.display_name, up.avatar_url, au.email, up.created_at,
             GREATEST(
               up.updated_at,
               up.created_at,
@@ -186,7 +186,7 @@ export const getAdminUsers = createServerFn({ method: "GET" })
     const { sql } = await requireAdmin(data.userId);
     const search = data.query?.trim() ? `%${data.query.trim()}%` : null;
     const rows = await sql`
-      SELECT up.user_id, up.account_type, up.display_name, au.email, up.created_at,
+      SELECT up.user_id, up.account_type, up.display_name, up.avatar_url, au.email, up.created_at,
         GREATEST(
           up.updated_at,
           up.created_at,
@@ -568,6 +568,7 @@ function toAdminUser(row: Record<string, unknown>): AdminUserSummary {
     userId: String(row.user_id),
     accountType: nullableString(row.account_type),
     displayName: nullableString(row.display_name),
+    avatarUrl: nullableString(row.avatar_url),
     email: nullableString(row.email),
     createdAt: row.created_at ? stringifyDate(row.created_at) : null,
     lastActivityAt: row.last_activity_at ? stringifyDate(row.last_activity_at) : null,

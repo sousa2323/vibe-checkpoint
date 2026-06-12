@@ -40,8 +40,10 @@ import {
   createVenueUpdate,
   deleteEventForOwner,
   getOwnerDashboard,
+  redeemRewardCode,
   type EventSummary,
   type OwnerDashboard,
+  type RedeemRewardResult,
   upsertOwnerReward,
   updateEventForOwner,
 } from "@/lib/data";
@@ -65,6 +67,7 @@ function VenueDashboard() {
   const updateEvent = useServerFn(updateEventForOwner);
   const deleteEvent = useServerFn(deleteEventForOwner);
   const saveReward = useServerFn(upsertOwnerReward);
+  const redeemCode = useServerFn(redeemRewardCode);
   const publishUpdate = useServerFn(createVenueUpdate);
   const [dashboard, setDashboard] = useState<OwnerDashboard>({
     venue: null,
@@ -85,6 +88,7 @@ function VenueDashboard() {
       ],
       customers: [],
     },
+    rewardRedemptions: { redeemed: 0, pending: 0, recent: [] },
   });
   const [crmSegment, setCrmSegment] =
     useState<OwnerDashboard["crm"]["segments"][number]["key"]>("all");
@@ -98,6 +102,11 @@ function VenueDashboard() {
   const [deleteTarget, setDeleteTarget] = useState<EventSummary | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemFeedback, setRedeemFeedback] = useState<{
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
 
   const refreshDashboard = useCallback(
     async (userId = user?.id, options?: { showLoading?: boolean }) => {
@@ -392,6 +401,46 @@ function VenueDashboard() {
     }
   }
 
+  async function submitRedeemCode(code: string): Promise<boolean> {
+    if (!user?.id) {
+      navigate({ to: "/auth" });
+      return false;
+    }
+
+    setRedeeming(true);
+    setRedeemFeedback(null);
+    try {
+      const result = await redeemCode({ data: { userId: user.id, code } });
+      if (result.result === "redeemed") {
+        setRedeemFeedback({
+          tone: "success",
+          message: `Resgate confirmado: ${result.rewardTitle ?? "benefício"} para ${result.customerName ?? "cliente"}.`,
+        });
+        refreshDashboard(user.id).catch(() => undefined);
+        return true;
+      }
+
+      const messages: Record<Exclude<RedeemRewardResult, "redeemed">, string> = {
+        not_found: "Código não encontrado. Confira com o cliente.",
+        already_redeemed: result.redeemedAt
+          ? `Esse código já foi usado em ${redemptionDateFormatter.format(new Date(result.redeemedAt))}.`
+          : "Esse código já foi usado.",
+        expired: "Esse código expirou junto com a promoção.",
+        reward_inactive: "Esse código é de uma promoção que não está mais ativa.",
+      };
+      setRedeemFeedback({ tone: "error", message: messages[result.result] });
+      return false;
+    } catch (cause) {
+      setRedeemFeedback({
+        tone: "error",
+        message: cause instanceof Error ? cause.message : "Não foi possível validar agora.",
+      });
+      return false;
+    } finally {
+      setRedeeming(false);
+    }
+  }
+
   async function submitUpdate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -548,6 +597,16 @@ function VenueDashboard() {
       {venue ? <FollowerUpdatePanel updates={dashboard.updates} onSubmit={submitUpdate} /> : null}
 
       {venue ? <RewardPanel reward={dashboard.reward ?? null} onSubmit={submitReward} /> : null}
+
+      {venue ? (
+        <RedeemCodePanel
+          stats={dashboard.rewardRedemptions}
+          maxRedemptions={dashboard.reward?.maxRedemptions}
+          busy={redeeming}
+          feedback={redeemFeedback}
+          onSubmit={submitRedeemCode}
+        />
+      ) : null}
 
       {venue ? <OwnerReviewsPanel reviews={dashboard.reviews} /> : null}
 
@@ -913,6 +972,126 @@ function RewardPanel({
           </PillButton>
         </form>
       </SwipeCollapseCard>
+    </section>
+  );
+}
+
+const redemptionDateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});
+
+function RedeemCodePanel({
+  stats,
+  maxRedemptions,
+  busy,
+  feedback,
+  onSubmit,
+}: {
+  stats: OwnerDashboard["rewardRedemptions"];
+  maxRedemptions?: number;
+  busy: boolean;
+  feedback: { tone: "success" | "error"; message: string } | null;
+  onSubmit: (code: string) => Promise<boolean>;
+}) {
+  const [code, setCode] = useState("");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const redeemed = await onSubmit(code);
+    if (redeemed) setCode("");
+  }
+
+  return (
+    <section className="mt-5 px-6">
+      <div className="rounded-[1.75rem] border border-border bg-card p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-primary">Resgates</p>
+            <h2 className="mt-1 text-lg font-black tracking-tight">Validar código do cliente</h2>
+          </div>
+          <span className="rounded-full bg-muted px-3 py-1 text-xs font-black">
+            {stats.redeemed}
+            {maxRedemptions ? ` de ${maxRedemptions}` : ""}{" "}
+            {stats.redeemed === 1 && !maxRedemptions ? "resgatado" : "resgatados"}
+          </span>
+        </div>
+
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+          O cliente recebe um código de 6 caracteres ao liberar a promoção. Digite o código ou leia
+          o QR mostrado por ele para confirmar o resgate.
+        </p>
+
+        <form onSubmit={(event) => void handleSubmit(event)} className="mt-4 flex gap-2">
+          <input
+            value={code}
+            onChange={(event) =>
+              setCode(
+                event.target.value
+                  .toUpperCase()
+                  .replace(/[^A-Z0-9]/g, "")
+                  .slice(0, 6),
+              )
+            }
+            placeholder="ABC123"
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            aria-label="Código de resgate do cliente"
+            className="h-12 min-w-0 flex-1 rounded-full border border-border bg-background px-4 text-center font-mono text-lg font-black uppercase tracking-[0.3em] outline-none placeholder:text-muted-foreground/40"
+          />
+          <PillButton type="submit" disabled={busy || code.length !== 6} className="shrink-0">
+            {busy ? "Validando..." : "Validar"}
+          </PillButton>
+        </form>
+
+        {feedback ? (
+          <p
+            className={
+              feedback.tone === "success"
+                ? "mt-3 rounded-2xl bg-emerald-500/10 p-3 text-sm font-bold text-emerald-700"
+                : "mt-3 rounded-2xl bg-primary/10 p-3 text-sm font-bold text-primary"
+            }
+          >
+            {feedback.message}
+          </p>
+        ) : null}
+
+        {stats.pending > 0 ? (
+          <p className="mt-3 text-xs text-muted-foreground">
+            {stats.pending === 1
+              ? "1 código pendente emitido."
+              : `${stats.pending} códigos pendentes emitidos.`}
+          </p>
+        ) : null}
+
+        {stats.recent.length > 0 ? (
+          <div className="mt-4 space-y-2">
+            <p className="text-xs font-bold uppercase text-muted-foreground">Últimas validações</p>
+            {stats.recent.map((entry) => (
+              <div
+                key={entry.id}
+                className="flex items-center justify-between gap-3 rounded-2xl bg-muted p-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black">{entry.customerName}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {entry.rewardTitle}
+                    {" · "}
+                    {redemptionDateFormatter.format(new Date(entry.redeemedAt))}
+                  </p>
+                </div>
+                <span className="shrink-0 font-mono text-xs font-black text-muted-foreground">
+                  {entry.code}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }

@@ -32,6 +32,7 @@ export interface EventSummary {
   saved?: boolean;
   checkedIn?: boolean;
   reward?: VenueReward | null;
+  redemption?: RewardRedemptionSummary | null;
   attendees: UserAvatarSummary[];
   recurrenceType: EventRecurrenceType;
   recurrenceWeekday?: number;
@@ -63,6 +64,7 @@ export interface VenueSummary {
   followerCount?: number;
   followed?: boolean;
   reward?: VenueReward | null;
+  redemption?: RewardRedemptionSummary | null;
 }
 
 export interface VenueReward {
@@ -75,6 +77,26 @@ export interface VenueReward {
   maxRedemptions?: number;
   validUntil?: string;
 }
+
+export interface RewardRedemptionSummary {
+  id: string;
+  rewardId: string;
+  venueId: string;
+  eventId?: string;
+  code: string;
+  status: "pending" | "redeemed" | "expired" | "cancelled";
+  createdAt: string;
+  redeemedAt?: string;
+  rewardTitle?: string;
+  venueName?: string;
+}
+
+export type RedeemRewardResult =
+  | "redeemed"
+  | "not_found"
+  | "expired"
+  | "already_redeemed"
+  | "reward_inactive";
 
 export interface VenueUpdateSummary {
   id: string;
@@ -286,6 +308,19 @@ export interface OwnerDashboard {
     date: string;
   };
   reward?: VenueReward | null;
+  rewardRedemptions: {
+    redeemed: number;
+    pending: number;
+    recent: OwnerRedemptionEntry[];
+  };
+}
+
+export interface OwnerRedemptionEntry {
+  id: string;
+  code: string;
+  customerName: string;
+  rewardTitle: string;
+  redeemedAt: string;
 }
 
 export interface UserActivityStats {
@@ -443,6 +478,27 @@ function mapReward(row: Record<string, unknown> | undefined): VenueReward | null
   };
 }
 
+function mapRedemption(
+  row: Record<string, unknown> | undefined,
+  prefix = "redemption_",
+): RewardRedemptionSummary | null {
+  const get = (key: string) => row?.[`${prefix}${key}`];
+  if (!get("id")) return null;
+
+  return {
+    id: String(get("id")),
+    rewardId: String(get("reward_id")),
+    venueId: String(get("venue_id")),
+    eventId: get("event_id") ? String(get("event_id")) : undefined,
+    code: String(get("code")),
+    status: String(get("status")) as RewardRedemptionSummary["status"],
+    createdAt: String(get("created_at")),
+    redeemedAt: get("redeemed_at") ? String(get("redeemed_at")) : undefined,
+    rewardTitle: get("reward_title") ? String(get("reward_title")) : undefined,
+    venueName: get("venue_name") ? String(get("venue_name")) : undefined,
+  };
+}
+
 function mapEvent(row: Record<string, unknown>, saved = false, checkedIn = false): EventSummary {
   const recurrenceType = String(row.recurrence_type ?? "none") as EventRecurrenceType;
 
@@ -470,6 +526,7 @@ function mapEvent(row: Record<string, unknown>, saved = false, checkedIn = false
     saved,
     checkedIn,
     reward: mapReward(row),
+    redemption: mapRedemption(row),
     attendees: mapAttendees(row.attendees),
     recurrenceType,
     recurrenceWeekday: row.recurrence_weekday == null ? undefined : Number(row.recurrence_weekday),
@@ -910,11 +967,235 @@ function mapVenue(row: Record<string, unknown>): VenueSummary {
     followerCount: Number(row.follower_count ?? 0),
     followed: Boolean(row.followed ?? false),
     reward: mapReward(row),
+    redemption: mapRedemption(row),
   };
 }
 
 async function ensureRewardsSchema(_sql: SqlClient) {
   return;
+}
+
+let rewardRedemptionsSchemaReady = false;
+
+async function ensureRewardRedemptionsSchema(sql: SqlClient) {
+  if (rewardRedemptionsSchemaReady) return;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.reward_redemptions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      reward_id uuid NOT NULL REFERENCES public.venue_rewards(id) ON DELETE CASCADE,
+      venue_id uuid NOT NULL REFERENCES public.venues(id) ON DELETE CASCADE,
+      event_id uuid REFERENCES public.events(id) ON DELETE SET NULL,
+      user_id text NOT NULL,
+      code text NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      redeemed_at timestamptz,
+      redeemed_by text,
+      CONSTRAINT reward_redemptions_status_check CHECK (status IN ('pending', 'redeemed', 'expired', 'cancelled')),
+      CONSTRAINT reward_redemptions_reward_user_unique UNIQUE (reward_id, user_id)
+    )
+  `;
+
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS reward_redemptions_code_idx
+    ON public.reward_redemptions (code)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS reward_redemptions_venue_status_idx
+    ON public.reward_redemptions (venue_id, status, created_at DESC)
+  `;
+
+  await sql`
+    CREATE OR REPLACE FUNCTION public.generate_redemption_code()
+    RETURNS text
+    LANGUAGE plpgsql
+    VOLATILE
+    AS $fn$
+    DECLARE
+      alphabet constant text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+      bytes bytea := gen_random_bytes(6);
+      result text := '';
+      i int;
+    BEGIN
+      FOR i IN 0..5 LOOP
+        result := result || substr(alphabet, (get_byte(bytes, i) % length(alphabet)) + 1, 1);
+      END LOOP;
+      RETURN result;
+    END;
+    $fn$
+  `;
+
+  await sql`
+    CREATE OR REPLACE FUNCTION public.claim_reward_redemption(
+      p_reward_id uuid,
+      p_user_id text,
+      p_event_id uuid DEFAULT NULL
+    )
+    RETURNS public.reward_redemptions
+    LANGUAGE plpgsql
+    VOLATILE
+    AS $fn$
+    DECLARE
+      v_reward public.venue_rewards%rowtype;
+      v_existing public.reward_redemptions%rowtype;
+      v_has_existing boolean := false;
+      v_issued_count bigint;
+      v_code text;
+      v_attempt int;
+    BEGIN
+      SELECT * INTO v_reward
+      FROM public.venue_rewards
+      WHERE id = p_reward_id AND status = 'active'
+      FOR UPDATE;
+
+      IF NOT FOUND THEN
+        RETURN NULL;
+      END IF;
+
+      IF v_reward.valid_until IS NOT NULL AND v_reward.valid_until <= now() THEN
+        RETURN NULL;
+      END IF;
+
+      SELECT * INTO v_existing
+      FROM public.reward_redemptions
+      WHERE reward_id = p_reward_id AND user_id = p_user_id;
+      v_has_existing := FOUND;
+
+      IF v_has_existing AND v_existing.status IN ('pending', 'redeemed') THEN
+        RETURN v_existing;
+      END IF;
+
+      IF v_reward.max_redemptions IS NOT NULL THEN
+        SELECT count(*) INTO v_issued_count
+        FROM public.reward_redemptions
+        WHERE reward_id = p_reward_id AND status IN ('pending', 'redeemed');
+
+        IF v_issued_count >= v_reward.max_redemptions THEN
+          RETURN NULL;
+        END IF;
+      END IF;
+
+      FOR v_attempt IN 1..5 LOOP
+        v_code := public.generate_redemption_code();
+        BEGIN
+          IF v_has_existing THEN
+            UPDATE public.reward_redemptions
+            SET status = 'pending',
+                code = v_code,
+                event_id = coalesce(p_event_id, event_id),
+                created_at = now(),
+                redeemed_at = NULL,
+                redeemed_by = NULL
+            WHERE id = v_existing.id
+            RETURNING * INTO v_existing;
+          ELSE
+            INSERT INTO public.reward_redemptions (reward_id, venue_id, event_id, user_id, code)
+            VALUES (p_reward_id, v_reward.venue_id, p_event_id, p_user_id, v_code)
+            RETURNING * INTO v_existing;
+          END IF;
+          RETURN v_existing;
+        EXCEPTION WHEN unique_violation THEN
+          NULL;
+        END;
+      END LOOP;
+
+      RAISE EXCEPTION 'Não foi possível gerar um código de resgate único.';
+    END;
+    $fn$
+  `;
+
+  await sql`
+    CREATE OR REPLACE FUNCTION public.redeem_reward_code(
+      p_code text,
+      p_owner_user_id text
+    )
+    RETURNS jsonb
+    LANGUAGE plpgsql
+    VOLATILE
+    AS $fn$
+    DECLARE
+      v_row record;
+    BEGIN
+      SELECT rr.id, rr.code, rr.status, rr.created_at, rr.redeemed_at,
+             vr.status AS reward_status, vr.valid_until, vr.title AS reward_title,
+             v.name AS venue_name,
+             coalesce(up.display_name, 'Cliente') AS customer_name
+      INTO v_row
+      FROM public.reward_redemptions rr
+      JOIN public.venue_rewards vr ON vr.id = rr.reward_id
+      JOIN public.venues v ON v.id = rr.venue_id
+      LEFT JOIN public.user_profiles up ON up.user_id = rr.user_id
+      WHERE rr.code = upper(trim(p_code))
+        AND v.owner_user_id = p_owner_user_id
+      FOR UPDATE OF rr;
+
+      IF NOT FOUND THEN
+        RETURN jsonb_build_object('result', 'not_found');
+      END IF;
+
+      IF v_row.status = 'redeemed' THEN
+        RETURN jsonb_build_object(
+          'result', 'already_redeemed',
+          'reward_title', v_row.reward_title,
+          'customer_name', v_row.customer_name,
+          'redeemed_at', v_row.redeemed_at
+        );
+      END IF;
+
+      IF v_row.status IN ('expired', 'cancelled') OR v_row.reward_status <> 'active' THEN
+        RETURN jsonb_build_object('result', 'reward_inactive');
+      END IF;
+
+      IF v_row.valid_until IS NOT NULL AND v_row.valid_until <= now() THEN
+        UPDATE public.reward_redemptions SET status = 'expired' WHERE id = v_row.id;
+        RETURN jsonb_build_object('result', 'expired');
+      END IF;
+
+      UPDATE public.reward_redemptions
+      SET status = 'redeemed', redeemed_at = now(), redeemed_by = p_owner_user_id
+      WHERE id = v_row.id;
+
+      RETURN jsonb_build_object(
+        'result', 'redeemed',
+        'reward_title', v_row.reward_title,
+        'customer_name', v_row.customer_name,
+        'venue_name', v_row.venue_name,
+        'redeemed_at', now()
+      );
+    END;
+    $fn$
+  `;
+
+  rewardRedemptionsSchemaReady = true;
+}
+
+async function claimRewardForAction(
+  sql: SqlClient,
+  input: { venueId: string; eventId?: string; userId: string; action: VenueReward["action"] },
+): Promise<RewardRedemptionSummary | null> {
+  await ensureRewardRedemptionsSchema(sql);
+
+  const rewardRows = await sql`
+    SELECT id
+    FROM public.venue_rewards
+    WHERE venue_id = ${input.venueId}
+      AND action = ${input.action}
+      AND status = 'active'
+      AND (valid_until IS NULL OR valid_until > now())
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `;
+  const rewardId = rewardRows[0]?.id;
+  if (!rewardId) return null;
+
+  const rows = await sql`
+    SELECT * FROM public.claim_reward_redemption(${rewardId}, ${input.userId}, ${input.eventId ?? null})
+  `;
+  const row = rows[0];
+  if (!row?.id) return null;
+  return mapRedemption(row, "");
 }
 
 async function ensureVenueFollowersSchema(_sql: SqlClient) {
@@ -1998,6 +2279,7 @@ export const getEventDetails = createServerFn({ method: "GET" })
     await ensureEventsRecurrenceSchema(sql);
     await ensureRewardsSchema(sql);
     await ensureVenueFollowersSchema(sql);
+    await ensureRewardRedemptionsSchema(sql);
 
     const rows = await sql`
       SELECT
@@ -2050,6 +2332,14 @@ export const getEventDetails = createServerFn({ method: "GET" })
         r.status AS reward_status,
         r.max_redemptions AS reward_max_redemptions,
         r.valid_until AS reward_valid_until,
+        rr.id AS redemption_id,
+        rr.reward_id AS redemption_reward_id,
+        rr.venue_id AS redemption_venue_id,
+        rr.event_id AS redemption_event_id,
+        rr.code AS redemption_code,
+        rr.status AS redemption_status,
+        rr.created_at AS redemption_created_at,
+        rr.redeemed_at AS redemption_redeemed_at,
         EXISTS (
           SELECT 1
           FROM public.saved_events se
@@ -2092,6 +2382,14 @@ export const getEventDetails = createServerFn({ method: "GET" })
         ORDER BY vr.updated_at DESC
         LIMIT 1
       ) r ON true
+      LEFT JOIN LATERAL (
+        SELECT *
+        FROM public.reward_redemptions prr
+        WHERE prr.reward_id = r.id
+          AND prr.user_id = ${userId ?? ""}
+          AND prr.status IN ('pending', 'redeemed')
+        LIMIT 1
+      ) rr ON true
       WHERE e.id = ${data.eventId}
         AND e.status = 'published'
       LIMIT 1
@@ -2108,6 +2406,7 @@ export const getVenueDetails = createServerFn({ method: "GET" })
     if (!sql) return null;
     await ensureEventsRecurrenceSchema(sql);
     await ensureRewardsSchema(sql);
+    await ensureRewardRedemptionsSchema(sql);
 
     const venueRows = await sql`
       SELECT
@@ -2137,6 +2436,14 @@ export const getVenueDetails = createServerFn({ method: "GET" })
         r.status AS reward_status,
         r.max_redemptions AS reward_max_redemptions,
         r.valid_until AS reward_valid_until,
+        rr.id AS redemption_id,
+        rr.reward_id AS redemption_reward_id,
+        rr.venue_id AS redemption_venue_id,
+        rr.event_id AS redemption_event_id,
+        rr.code AS redemption_code,
+        rr.status AS redemption_status,
+        rr.created_at AS redemption_created_at,
+        rr.redeemed_at AS redemption_redeemed_at,
         EXISTS (
           SELECT 1
           FROM public.favorite_venues current_favorite
@@ -2190,8 +2497,17 @@ export const getVenueDetails = createServerFn({ method: "GET" })
         ORDER BY vr.updated_at DESC
         LIMIT 1
       ) r ON true
+      LEFT JOIN LATERAL (
+        SELECT *
+        FROM public.reward_redemptions prr
+        WHERE prr.reward_id = r.id
+          AND prr.user_id = ${userId ?? ""}
+          AND prr.status IN ('pending', 'redeemed')
+        LIMIT 1
+      ) rr ON true
       WHERE v.id = ${data.venueId}
-      GROUP BY v.id, r.id, r.venue_id, r.action, r.title, r.description, r.status, r.max_redemptions, r.valid_until
+      GROUP BY v.id, r.id, r.venue_id, r.action, r.title, r.description, r.status, r.max_redemptions, r.valid_until,
+        rr.id, rr.reward_id, rr.venue_id, rr.event_id, rr.code, rr.status, rr.created_at, rr.redeemed_at
       LIMIT 1
     `;
 
@@ -2251,6 +2567,14 @@ export const getVenueDetails = createServerFn({ method: "GET" })
           r.status AS reward_status,
           r.max_redemptions AS reward_max_redemptions,
           r.valid_until AS reward_valid_until,
+          rr.id AS redemption_id,
+          rr.reward_id AS redemption_reward_id,
+          rr.venue_id AS redemption_venue_id,
+          rr.event_id AS redemption_event_id,
+          rr.code AS redemption_code,
+          rr.status AS redemption_status,
+          rr.created_at AS redemption_created_at,
+          rr.redeemed_at AS redemption_redeemed_at,
           EXISTS (
             SELECT 1
             FROM public.saved_events se
@@ -2294,6 +2618,14 @@ export const getVenueDetails = createServerFn({ method: "GET" })
           ORDER BY vr.updated_at DESC
           LIMIT 1
         ) r ON true
+        LEFT JOIN LATERAL (
+          SELECT *
+          FROM public.reward_redemptions prr
+          WHERE prr.reward_id = r.id
+            AND prr.user_id = ${userId ?? ""}
+            AND prr.status IN ('pending', 'redeemed')
+          LIMIT 1
+        ) rr ON true
         WHERE e.venue_id = ${data.venueId}
           AND e.status = 'published'
         ORDER BY occurrence.starts_at ASC
@@ -2516,7 +2848,19 @@ export const toggleCheckin = createServerFn({ method: "POST" })
             AND occurrence_starts_at = ${occurrenceStartsAt}
         `;
 
-      return { checkedIn: false };
+      await ensureRewardRedemptionsSchema(sql);
+      await sql`
+          UPDATE public.reward_redemptions rr
+          SET status = 'cancelled'
+          FROM public.venue_rewards vr
+          WHERE vr.id = rr.reward_id
+            AND vr.action = 'checkin'
+            AND rr.user_id = ${userId}
+            AND rr.venue_id = ${data.venueId}
+            AND rr.status = 'pending'
+        `;
+
+      return { checkedIn: false, redemption: null };
     }
 
     await sql`
@@ -2527,7 +2871,83 @@ export const toggleCheckin = createServerFn({ method: "POST" })
           created_at = now()
       `;
 
-    return { checkedIn: true };
+    const redemption = await claimRewardForAction(sql, {
+      venueId: data.venueId,
+      eventId: data.eventId,
+      userId,
+      action: "checkin",
+    });
+
+    return { checkedIn: true, redemption };
+  });
+
+export const redeemRewardCode = createServerFn({ method: "POST" })
+  .inputValidator((data: { userId: string; code: string }) => data)
+  .handler(
+    async ({
+      data,
+    }): Promise<{
+      result: RedeemRewardResult;
+      rewardTitle?: string;
+      customerName?: string;
+      redeemedAt?: string;
+    }> => {
+      const userId = await requireAuthenticatedUserId(data.userId);
+
+      const code = data.code.trim().toUpperCase();
+      if (code.length !== 6) throw new Error("Informe o código de 6 caracteres do cliente.");
+
+      const sql = await getSql();
+      if (!sql) throw new Error("DATABASE_URL não configurada.");
+      await ensureRewardRedemptionsSchema(sql);
+
+      const rows = await sql`
+        SELECT public.redeem_reward_code(${code}, ${userId}) AS payload
+      `;
+      const payload = (rows[0]?.payload ?? {}) as Record<string, unknown>;
+
+      return {
+        result: String(payload.result ?? "not_found") as RedeemRewardResult,
+        rewardTitle: payload.reward_title ? String(payload.reward_title) : undefined,
+        customerName: payload.customer_name ? String(payload.customer_name) : undefined,
+        redeemedAt: payload.redeemed_at ? String(payload.redeemed_at) : undefined,
+      };
+    },
+  );
+
+export const getMyRewardRedemptions = createServerFn({ method: "GET" })
+  .inputValidator((data: { userId: string }) => data)
+  .handler(async ({ data }): Promise<RewardRedemptionSummary[]> => {
+    const userId = await requireAuthenticatedUserId(data.userId);
+
+    const sql = await getSql();
+    if (!sql) return [];
+    await ensureRewardRedemptionsSchema(sql);
+
+    const rows = await sql`
+      SELECT
+        rr.id,
+        rr.reward_id,
+        rr.venue_id,
+        rr.event_id,
+        rr.code,
+        rr.status,
+        rr.created_at,
+        rr.redeemed_at,
+        vr.title AS reward_title,
+        v.name AS venue_name
+      FROM public.reward_redemptions rr
+      JOIN public.venue_rewards vr ON vr.id = rr.reward_id
+      JOIN public.venues v ON v.id = rr.venue_id
+      WHERE rr.user_id = ${userId}
+        AND rr.status IN ('pending', 'redeemed')
+      ORDER BY (rr.status = 'pending') DESC, rr.created_at DESC
+      LIMIT 20
+    `;
+
+    return rows
+      .map((row) => mapRedemption(row, ""))
+      .filter((item): item is RewardRedemptionSummary => item != null);
   });
 
 export const upsertOwnerReward = createServerFn({ method: "POST" })
@@ -2992,6 +3412,7 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
       updates: [],
       reviews: EMPTY_OWNER_REVIEW_STATS,
       crm: EMPTY_OWNER_CRM,
+      rewardRedemptions: { redeemed: 0, pending: 0, recent: [] },
     };
 
     const userId = await requireAuthenticatedUserId(data.userId);
@@ -3002,6 +3423,7 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
     await ensureRewardsSchema(sql);
     await ensureVenueUpdatesSchema(sql);
     await ensureEventReviewsSchema(sql);
+    await ensureRewardRedemptionsSchema(sql);
 
     const venueRows = await sql`
       SELECT
@@ -3070,6 +3492,8 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
       reviewStatsRows,
       reviewRows,
       crmRows,
+      redemptionStatsRows,
+      redemptionRecentRows,
     ] = await Promise.all([
       sql`
         SELECT
@@ -3384,6 +3808,28 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
         ORDER BY last_interaction DESC
         LIMIT 24
       `,
+      sql`
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'redeemed')::int AS redeemed,
+          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending
+        FROM public.reward_redemptions
+        WHERE venue_id = ${venue.id}
+      `,
+      sql`
+        SELECT
+          rr.id,
+          rr.code,
+          rr.redeemed_at,
+          vr.title AS reward_title,
+          COALESCE(up.display_name, 'Cliente ChegaAi') AS customer_name
+        FROM public.reward_redemptions rr
+        JOIN public.venue_rewards vr ON vr.id = rr.reward_id
+        LEFT JOIN public.user_profiles up ON up.user_id = rr.user_id
+        WHERE rr.venue_id = ${venue.id}
+          AND rr.status = 'redeemed'
+        ORDER BY rr.redeemed_at DESC
+        LIMIT 5
+      `,
     ]);
 
     const metrics = metricRows[0] ?? { events: 0, checkins: 0 };
@@ -3417,6 +3863,17 @@ export const getOwnerDashboard = createServerFn({ method: "GET" })
       reviews,
       crm: mapOwnerCrm(crmRows),
       reward,
+      rewardRedemptions: {
+        redeemed: Number(redemptionStatsRows[0]?.redeemed ?? 0),
+        pending: Number(redemptionStatsRows[0]?.pending ?? 0),
+        recent: redemptionRecentRows.map((row) => ({
+          id: String(row.id),
+          code: String(row.code),
+          customerName: String(row.customer_name),
+          rewardTitle: String(row.reward_title),
+          redeemedAt: String(row.redeemed_at),
+        })),
+      },
       topSavedEvent: topSaved
         ? {
             id: String(topSaved.id),

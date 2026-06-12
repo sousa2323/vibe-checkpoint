@@ -397,7 +397,13 @@ function Discover() {
         setEvents((current) => current.map((item) => (item.id === event.id ? event : item)));
       })
       .catch(() => undefined);
-    setStatus(result.checkedIn ? "Check-in registrado." : "Check-in desfeito.");
+    setStatus(
+      result.checkedIn && result.redemption
+        ? `Check-in registrado. Seu código de resgate: ${result.redemption.code}.`
+        : result.checkedIn
+          ? "Check-in registrado."
+          : "Check-in desfeito.",
+    );
   }
 
   async function onTogglePostLike(postId: string) {

@@ -4,14 +4,18 @@ import {
   CalendarDays,
   Eye,
   History,
+  LayoutDashboard,
   LoaderCircle,
   LockKeyhole,
+  MapPin,
   Search,
   ShieldCheck,
   Store,
   UserRound,
   UsersRound,
+  X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/auth";
@@ -40,11 +44,11 @@ export const Route = createFileRoute("/admin")({
 
 type AdminTab = "overview" | "users" | "privacy" | "audit";
 
-const tabs: Array<{ value: AdminTab; label: string }> = [
-  { value: "overview", label: "Visão geral" },
-  { value: "users", label: "Usuários" },
-  { value: "privacy", label: "LGPD" },
-  { value: "audit", label: "Auditoria" },
+const tabs: Array<{ value: AdminTab; label: string; icon: LucideIcon }> = [
+  { value: "overview", label: "Visão geral", icon: LayoutDashboard },
+  { value: "users", label: "Usuários", icon: UsersRound },
+  { value: "privacy", label: "LGPD", icon: ShieldCheck },
+  { value: "audit", label: "Auditoria", icon: History },
 ];
 
 const statusOptions: Array<{ value: PrivacyRequestStatus; label: string }> = [
@@ -250,32 +254,34 @@ function AdminPage() {
   return (
     <main className="min-h-screen bg-muted/35 text-foreground">
       <div className="mx-auto w-full max-w-[1440px] px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
-        <header className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
+        <header className="rounded-[2rem] bg-ink p-5 text-white sm:p-6 dark:border dark:border-border">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 items-start gap-4">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-ink text-white">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-white">
                 <ShieldCheck className="h-5 w-5" />
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-black text-primary">Admin ChegaAí</p>
+                <p className="text-xs font-black uppercase tracking-[0.24em] text-primary">
+                  Admin ChegaAí
+                </p>
                 <h1 className="mt-1 text-2xl font-black leading-tight tracking-tight sm:text-3xl">
                   Operação, privacidade e auditoria
                 </h1>
-                <p className="mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-muted-foreground">
+                <p className="mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-white/60">
                   Busque usuários, revise pedidos LGPD e acompanhe ações administrativas sem acessar
                   o banco manualmente.
                 </p>
               </div>
             </div>
-            <div className="flex min-w-0 items-center gap-3 rounded-2xl bg-muted px-4 py-3 lg:min-w-72">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-card text-foreground">
+            <div className="flex min-w-0 items-center gap-3 rounded-2xl bg-white/10 px-4 py-3 lg:min-w-72">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-white">
                 <UserRound className="h-4 w-4" />
               </span>
               <div className="min-w-0">
                 <p className="truncate text-sm font-black">
                   {dashboard.admin.displayName ?? dashboard.admin.email ?? "Admin"}
                 </p>
-                <p className="mt-0.5 truncate text-xs font-bold text-muted-foreground">
+                <p className="mt-0.5 truncate text-xs font-bold text-white/50">
                   {dashboard.admin.role}
                 </p>
               </div>
@@ -289,14 +295,20 @@ function AdminPage() {
               key={tab.value}
               type="button"
               className={cn(
-                "h-10 shrink-0 rounded-xl px-4 text-sm font-black transition",
+                "flex h-10 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-black transition",
                 activeTab === tab.value
-                  ? "bg-ink text-white shadow-sm"
+                  ? "bg-foreground text-background shadow-sm"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
               onClick={() => setActiveTab(tab.value)}
             >
+              <tab.icon className="h-4 w-4" />
               {tab.label}
+              {tab.value === "privacy" && dashboard.metrics.privacyPending > 0 ? (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-black text-white">
+                  {dashboard.metrics.privacyPending}
+                </span>
+              ) : null}
             </button>
           ))}
         </nav>
@@ -346,21 +358,21 @@ function OverviewTab({
   onOpenUser: (userId: string) => void;
 }) {
   return (
-    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-      <section className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
-          <MetricCard icon={<UsersRound />} label="Usuários" value={dashboard.metrics.users} />
-          <MetricCard icon={<Store />} label="Estabelecimentos" value={dashboard.metrics.venues} />
-          <MetricCard icon={<CalendarDays />} label="Eventos" value={dashboard.metrics.events} />
-          <MetricCard
-            icon={<ShieldCheck />}
-            label="LGPD pendentes"
-            value={dashboard.metrics.privacyPending}
-            signal
-          />
-        </div>
+    <div className="mt-5 space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard icon={<UsersRound />} label="Usuários" value={dashboard.metrics.users} />
+        <MetricCard icon={<Store />} label="Estabelecimentos" value={dashboard.metrics.venues} />
+        <MetricCard icon={<CalendarDays />} label="Eventos" value={dashboard.metrics.events} />
+        <MetricCard
+          icon={<ShieldCheck />}
+          label="LGPD pendentes"
+          value={dashboard.metrics.privacyPending}
+          signal
+        />
+      </div>
 
-        <div className="mt-8">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
           <SectionHeader
             title="Pedidos LGPD recentes"
             description="Resumo dos pedidos que também aparecem na aba LGPD."
@@ -369,7 +381,7 @@ function OverviewTab({
             {dashboard.privacyRequests.slice(0, 5).map((request) => (
               <div
                 key={request.id}
-                className="flex flex-col gap-2 bg-background p-4 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-2 bg-background p-4 transition-colors hover:bg-muted sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -387,26 +399,26 @@ function OverviewTab({
             ))}
             {!dashboard.privacyRequests.length ? <EmptyBlock text="Nenhum pedido LGPD." /> : null}
           </div>
-        </div>
-      </section>
+        </section>
 
-      <aside className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5 xl:sticky xl:top-24 xl:self-start">
-        <SectionHeader title="Últimos usuários" description="Cadastros recentes no app." />
-        <div className="mt-4 space-y-2">
-          {dashboard.recentUsers.length ? (
-            dashboard.recentUsers.map((profile) => (
-              <UserCard
-                key={profile.userId}
-                profile={profile}
-                compact
-                onOpen={() => onOpenUser(profile.userId)}
-              />
-            ))
-          ) : (
-            <EmptyBlock text="Nenhum perfil encontrado." />
-          )}
-        </div>
-      </aside>
+        <aside className="rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5 xl:sticky xl:top-24 xl:self-start">
+          <SectionHeader title="Últimos usuários" description="Cadastros recentes no app." />
+          <div className="mt-4 space-y-2">
+            {dashboard.recentUsers.length ? (
+              dashboard.recentUsers.map((profile) => (
+                <UserCard
+                  key={profile.userId}
+                  profile={profile}
+                  compact
+                  onOpen={() => onOpenUser(profile.userId)}
+                />
+              ))
+            ) : (
+              <EmptyBlock text="Nenhum perfil encontrado." />
+            )}
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
@@ -458,7 +470,7 @@ function UsersTab({
           </div>
           <button
             type="submit"
-            className="h-11 rounded-full bg-ink px-4 text-sm font-black text-white"
+            className="h-11 rounded-full bg-foreground px-4 text-sm font-black text-background transition-transform active:scale-[0.98]"
           >
             Buscar
           </button>
@@ -495,28 +507,41 @@ function UserCard({
   loading?: boolean;
   onOpen: () => void;
 }) {
+  const isOwner = profile.accountType === "owner";
   return (
     <button
       type="button"
-      className="w-full rounded-2xl bg-muted p-3 text-left transition hover:bg-surface active:scale-[0.99]"
+      className="w-full rounded-2xl border border-border bg-background p-3 text-left transition hover:bg-muted active:scale-[0.99]"
       onClick={onOpen}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+      <div className="flex items-start gap-3">
+        {profile.avatarUrl ? (
+          <img
+            src={profile.avatarUrl}
+            alt=""
+            className="h-10 w-10 shrink-0 rounded-full object-cover"
+          />
+        ) : (
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-xs font-black text-background">
+            {initialsOf(profile.displayName, profile.email)}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-black">{profile.displayName ?? "Usuário sem nome"}</p>
-          <p className="mt-1 text-xs font-semibold text-muted-foreground">
-            {profile.accountType === "owner" ? "Estabelecimento" : "Explorador"}
-          </p>
+          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+            {isOwner ? <Store className="h-3 w-3" /> : <MapPin className="h-3 w-3" />}
+            {isOwner ? "Estabelecimento" : "Explorador"}
+          </span>
           {profile.email ? (
-            <p className="mt-2 truncate text-xs text-muted-foreground">{profile.email}</p>
+            <p className="mt-1.5 truncate text-xs text-muted-foreground">{profile.email}</p>
           ) : null}
           {!compact ? (
-            <p className="mt-2 text-xs text-muted-foreground">
+            <p className="mt-1.5 text-xs text-muted-foreground">
               Última atividade: {formatDate(profile.lastActivityAt)}
             </p>
           ) : null}
         </div>
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-card text-foreground shadow-sm">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-foreground">
           {loading ? (
             <LoaderCircle className="h-4 w-4 animate-spin" />
           ) : (
@@ -556,10 +581,11 @@ function UserDetail({ detail, onClose }: { detail: AdminUserDetail; onClose: () 
         </div>
         <button
           type="button"
-          className="h-10 rounded-full bg-muted px-4 text-sm font-black text-foreground"
+          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-border px-4 text-sm font-black text-foreground transition-colors hover:bg-muted"
           onClick={onClose}
         >
-          Fechar detalhe
+          <X className="h-4 w-4" />
+          Fechar
         </button>
       </div>
 
@@ -648,13 +674,7 @@ function PrivacyTab({
       </div>
 
       {requests.length ? (
-        <div className="mt-4 space-y-3 lg:space-y-0 lg:overflow-hidden lg:rounded-3xl lg:border lg:border-border">
-          <div className="hidden grid-cols-[1fr_150px_170px_190px] gap-3 bg-muted px-4 py-3 text-xs font-black text-muted-foreground lg:grid">
-            <span>Pedido</span>
-            <span>Status</span>
-            <span>Criado em</span>
-            <span>Ação</span>
-          </div>
+        <div className="mt-4 space-y-3">
           {requests.map((request) => (
             <PrivacyRequestRow
               key={request.id}
@@ -690,28 +710,37 @@ function AuditTab({ logs, onRefresh }: { logs: AdminAuditLogSummary[]; onRefresh
         </button>
       </div>
 
-      <div className="mt-4 divide-y divide-border overflow-hidden rounded-3xl border border-border">
-        {logs.map((log) => (
-          <div key={log.id} className="bg-background p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+      <div className="relative mt-5">
+        {logs.length ? (
+          <>
+            <span
+              aria-hidden="true"
+              className="absolute bottom-5 left-[19px] top-5 w-px bg-border"
+            />
+            <div className="space-y-6">
+              {logs.map((log) => (
+                <div key={log.id} className="relative flex gap-4">
+                  <span className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted ring-4 ring-card">
                     <History className="h-4 w-4" />
                   </span>
-                  <p className="text-sm font-black">{translateAuditAction(log.action)}</p>
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                      <p className="text-sm font-black">{translateAuditAction(log.action)}</p>
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        {formatDate(log.createdAt)}
+                      </p>
+                    </div>
+                    <p className="mt-1 text-xs font-semibold leading-relaxed text-muted-foreground">
+                      {formatAuditSentence(log)}
+                    </p>
+                  </div>
                 </div>
-                <p className="mt-2 text-xs font-semibold text-muted-foreground">
-                  {formatAuditSentence(log)}
-                </p>
-              </div>
-              <p className="text-xs font-semibold text-muted-foreground">
-                {formatDate(log.createdAt)}
-              </p>
+              ))}
             </div>
-          </div>
-        ))}
-        {!logs.length ? <EmptyBlock text="Nenhuma ação admin registrada ainda." /> : null}
+          </>
+        ) : (
+          <EmptyBlock text="Nenhuma ação admin registrada ainda." />
+        )}
       </div>
     </section>
   );
@@ -728,20 +757,24 @@ function MetricCard({
   value: number;
   signal?: boolean;
 }) {
+  const active = Boolean(signal && value > 0);
   return (
-    <div className="flex items-center gap-4 rounded-[1.5rem] bg-muted p-4">
-      <div
-        className={cn(
-          "flex h-11 w-11 shrink-0 items-center justify-center rounded-full [&_svg]:h-5 [&_svg]:w-5",
-          signal ? "bg-primary/10 text-primary" : "bg-card text-foreground",
-        )}
-      >
-        {icon}
+    <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+      <div className="flex items-start justify-between">
+        <div
+          className={cn(
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-full [&_svg]:h-5 [&_svg]:w-5",
+            active ? "bg-primary/10 text-primary" : "bg-muted text-foreground",
+          )}
+        >
+          {icon}
+        </div>
+        {active ? (
+          <span className="mt-1 h-2.5 w-2.5 animate-pulse rounded-full bg-primary" />
+        ) : null}
       </div>
-      <div>
-        <p className="text-2xl font-black tracking-tight">{value}</p>
-        <p className="text-sm font-bold text-muted-foreground">{label}</p>
-      </div>
+      <p className="mt-4 text-3xl font-black tracking-tight">{value}</p>
+      <p className="mt-1 text-sm font-bold text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -771,15 +804,20 @@ function PrivacyRequestRow({
   onStatusChange: (status: PrivacyRequestStatus) => void;
 }) {
   return (
-    <div className="rounded-3xl border border-border bg-background p-4 lg:grid lg:grid-cols-[1fr_150px_170px_190px] lg:gap-3 lg:rounded-none lg:border-x-0 lg:border-b-0 lg:p-4">
+    <div className="rounded-3xl border border-border bg-background p-5 lg:grid lg:grid-cols-[minmax(0,1fr)_240px] lg:gap-6">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={request.status} />
           <p className="text-xs font-bold text-muted-foreground">{request.requestType}</p>
+          <span className="text-xs font-semibold text-muted-foreground">
+            · {formatDate(request.createdAt)}
+          </span>
         </div>
         <p className="mt-3 truncate text-sm font-black">{request.email ?? "Sem email"}</p>
         {request.reason ? (
-          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{request.reason}</p>
+          <p className="mt-3 border-l-2 border-border pl-3 text-sm leading-relaxed text-muted-foreground">
+            {request.reason}
+          </p>
         ) : null}
         <textarea
           value={note}
@@ -789,13 +827,13 @@ function PrivacyRequestRow({
         />
       </div>
 
-      <div className="mt-3 lg:mt-0">
-        <label className="text-xs font-black text-muted-foreground lg:hidden">Status</label>
+      <div className="mt-4 flex flex-col gap-2 lg:mt-0">
+        <label className="text-xs font-black text-muted-foreground">Status</label>
         <select
           value={request.status}
           onChange={(event) => onStatusChange(event.target.value as PrivacyRequestStatus)}
           disabled={saving}
-          className="mt-1 h-11 w-full rounded-full border border-border bg-card px-3 text-sm font-black outline-none ring-primary/25 transition focus:ring-4 disabled:opacity-60 lg:mt-0"
+          className="h-11 w-full rounded-xl border border-border bg-card px-3 text-sm font-black outline-none ring-primary/25 transition focus:ring-4 disabled:opacity-60"
         >
           {statusOptions.map((option) => (
             <option key={option.value} value={option.value}>
@@ -803,17 +841,10 @@ function PrivacyRequestRow({
             </option>
           ))}
         </select>
-      </div>
-
-      <div className="mt-3 text-sm font-semibold text-muted-foreground lg:mt-0">
-        {formatDate(request.createdAt)}
-      </div>
-
-      <div className="mt-3 lg:mt-0">
         <button
           type="button"
           disabled={saving}
-          className="h-11 w-full rounded-full bg-ink px-4 text-sm font-black text-white transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-1 h-11 w-full rounded-full bg-foreground px-4 text-sm font-black text-background transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           onClick={() => onStatusChange(request.status)}
         >
           {saving ? "Salvando..." : "Salvar nota"}
@@ -826,7 +857,12 @@ function PrivacyRequestRow({
 function ItemSection({ title, items }: { title: string; items: AdminNamedItem[] }) {
   return (
     <section className="rounded-3xl border border-border bg-background p-4">
-      <h3 className="text-sm font-black">{title}</h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-black">{title}</h3>
+        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+          {items.length}
+        </span>
+      </div>
       <div className="mt-3 space-y-2">
         {items.map((item) => (
           <div key={item.id} className="rounded-2xl bg-muted p-3">
@@ -845,7 +881,12 @@ function ItemSection({ title, items }: { title: string; items: AdminNamedItem[] 
 function TextSection({ title, items }: { title: string; items: AdminTextItem[] }) {
   return (
     <section className="rounded-3xl border border-border bg-background p-4">
-      <h3 className="text-sm font-black">{title}</h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-black">{title}</h3>
+        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+          {items.length}
+        </span>
+      </div>
       <div className="mt-3 space-y-2">
         {items.map((item) => (
           <div key={item.id} className="rounded-2xl bg-muted p-3">
@@ -868,7 +909,7 @@ function TextSection({ title, items }: { title: string; items: AdminTextItem[] }
 
 function SmallCount({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-3xl border border-border bg-background p-4">
+    <div className="rounded-2xl bg-muted p-4">
       <p className="text-2xl font-black tracking-tight">{value}</p>
       <p className="mt-1 text-xs font-bold text-muted-foreground">{label}</p>
     </div>
@@ -880,13 +921,16 @@ function StatusBadge({ status }: { status: PrivacyRequestStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex rounded-full px-2.5 py-1 text-xs font-black",
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-black",
         status === "pending" ? "bg-primary/10 text-primary" : undefined,
-        status === "in_review" ? "bg-amber-500/10 text-amber-700" : undefined,
-        status === "resolved" ? "bg-emerald-500/10 text-emerald-700" : undefined,
+        status === "in_review" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" : undefined,
+        status === "resolved"
+          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+          : undefined,
         status === "rejected" ? "bg-muted text-muted-foreground" : undefined,
       )}
     >
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
       {label}
     </span>
   );
@@ -894,8 +938,18 @@ function StatusBadge({ status }: { status: PrivacyRequestStatus }) {
 
 function EmptyBlock({ text }: { text: string }) {
   return (
-    <p className="rounded-3xl bg-muted p-4 text-sm font-semibold text-muted-foreground">{text}</p>
+    <p className="rounded-3xl border border-dashed border-border p-6 text-center text-sm font-semibold text-muted-foreground">
+      {text}
+    </p>
   );
+}
+
+function initialsOf(name: string | null, email: string | null) {
+  const source = name?.trim() || email?.trim() || "";
+  if (!source) return "?";
+  const words = source.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return `${words[0][0]}${words[1][0]}`.toUpperCase();
+  return source.slice(0, 2).toUpperCase();
 }
 
 function notesFromPrivacy(requests: PrivacyRequestSummary[]) {
