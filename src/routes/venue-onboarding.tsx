@@ -54,37 +54,36 @@ const categoryOptions = [
 const stateOptions = [
   "AC",
   "AL",
-  "AP",
   "AM",
+  "AP",
   "BA",
   "CE",
   "DF",
   "ES",
   "GO",
   "MA",
-  "MT",
-  "MS",
   "MG",
+  "MS",
+  "MT",
   "PA",
   "PB",
-  "PR",
   "PE",
   "PI",
+  "PR",
   "RJ",
   "RN",
-  "RS",
   "RO",
   "RR",
+  "RS",
   "SC",
-  "SP",
   "SE",
+  "SP",
   "TO",
 ];
 
 type VenueFormValues = {
   venueName: string;
   businessRole: string;
-  phone: string;
   whatsapp: string;
   category: string;
   state: string;
@@ -99,7 +98,6 @@ type VenueFormValues = {
 const emptyFormValues: VenueFormValues = {
   venueName: "",
   businessRole: "",
-  phone: "",
   whatsapp: "",
   category: "",
   state: "SP",
@@ -183,7 +181,6 @@ function VenueOnboarding() {
         setFormValues({
           venueName: venue.venueName,
           businessRole: venue.businessRole ?? "",
-          phone: venue.phone ?? "",
           whatsapp: venue.whatsapp ?? "",
           category: venue.category ?? "",
           state: venue.state ?? "SP",
@@ -302,7 +299,6 @@ function VenueOnboarding() {
     const formData = new FormData(event.currentTarget);
     const venueName = formValues.venueName.trim();
     const businessRole = formValues.businessRole.trim();
-    const phone = formValues.phone.trim();
     const whatsapp = formValues.whatsapp.trim();
     const category = formValues.category.trim();
     const state = formValues.state.trim();
@@ -322,9 +318,9 @@ function VenueOnboarding() {
       return;
     }
 
-    if (onlyDigits(phone, 11).length < 10) {
+    if (onlyDigits(whatsapp, 11).length < 10) {
       setStatus("idle");
-      setError("Informe um telefone válido com DDD.");
+      setError("Informe um WhatsApp válido com DDD.");
       return;
     }
 
@@ -364,14 +360,13 @@ function VenueOnboarding() {
             displayName: getAuthUserName(currentUser),
             venueName,
             businessRole,
-            phone,
             category,
             state,
             city,
             neighborhood,
             address,
             instagram: instagram || undefined,
-            whatsapp: whatsapp || undefined,
+            whatsapp,
             capacity: capacity || undefined,
             description: description || undefined,
             latitude: coordinates?.latitude,
@@ -490,18 +485,6 @@ function VenueOnboarding() {
           />
           <Field
             icon={<Phone className="h-4 w-4" />}
-            label="Telefone"
-            name="phone"
-            placeholder="(11) 99999-9999"
-            inputMode="tel"
-            maxLength={15}
-            onFormat={formatPhone}
-            value={formValues.phone}
-            onValueChange={(value) => updateField("phone", value)}
-            required
-          />
-          <Field
-            icon={<Phone className="h-4 w-4" />}
             label="WhatsApp para contato"
             name="whatsapp"
             placeholder="(11) 99999-9999"
@@ -510,6 +493,7 @@ function VenueOnboarding() {
             onFormat={formatPhone}
             value={formValues.whatsapp}
             onValueChange={(value) => updateField("whatsapp", value)}
+            required
           />
           <Field
             icon={<AtSign className="h-4 w-4" />}

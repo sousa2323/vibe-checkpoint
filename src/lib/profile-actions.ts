@@ -100,7 +100,6 @@ type CreateOrUpdateVenueInput = SaveVenueClaimInput & {
 export type OwnerVenueOnboarding = {
   venueName: string;
   businessRole?: string;
-  phone?: string;
   neighborhood?: string;
   address?: string;
   category?: string;
@@ -455,7 +454,6 @@ export const getOwnerVenueForOnboarding = createServerFn({ method: "GET" })
         v.state,
         v.address,
         v.description,
-        v.phone,
         v.category,
         v.instagram,
         v.whatsapp,
@@ -482,7 +480,6 @@ export const getOwnerVenueForOnboarding = createServerFn({ method: "GET" })
     return {
       venueName: String(row.name),
       businessRole: row.business_role ? String(row.business_role) : undefined,
-      phone: row.phone ? String(row.phone) : undefined,
       neighborhood: row.neighborhood ? String(row.neighborhood) : undefined,
       address: row.address ? String(row.address) : undefined,
       category: row.category ? String(row.category) : undefined,
@@ -555,7 +552,6 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
           state = ${normalizeState(data.state)},
           address = ${data.address?.trim() || null},
           description = ${data.description?.trim() || null},
-          phone = ${data.phone?.trim() || null},
           category = ${data.category?.trim() || null},
           instagram = ${data.instagram?.trim() || null},
           whatsapp = ${data.whatsapp?.trim() || null},
@@ -593,7 +589,6 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
         state,
         address,
         description,
-        phone,
         category,
         instagram,
         whatsapp,
@@ -612,7 +607,6 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
         ${normalizeState(data.state)},
         ${data.address?.trim() || null},
         ${data.description?.trim() || null},
-        ${data.phone?.trim() || null},
         ${data.category?.trim() || null},
         ${data.instagram?.trim() || null},
         ${data.whatsapp?.trim() || null},
