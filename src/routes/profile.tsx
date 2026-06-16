@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
   AtSign,
+  Bell,
   Building2,
   CalendarPlus,
   Camera,
@@ -9,7 +10,9 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Images,
   LoaderCircle,
+  LocateFixed,
   LogOut,
   MapPinOff,
   Moon,
@@ -47,6 +50,13 @@ import {
   type UserActivityStats,
 } from "@/lib/data";
 import { isAllowedImageMimeType, uploadMedia } from "@/lib/media";
+import {
+  type DevicePermissionKind,
+  type DevicePermissionState,
+  type DevicePermissionStatuses,
+  getDevicePermissionStatuses,
+  requestDevicePermission,
+} from "@/lib/device-permissions";
 import { clearSavedLocationPreferences } from "@/lib/location";
 import { exportUserData, requestAccountDeletion } from "@/lib/privacy-actions";
 import {
@@ -687,6 +697,7 @@ function Profile() {
             helper={isDark ? "Voltar para a aparência clara." : "Usar aparência escura no app."}
             onClick={toggleTheme}
           />
+          <DevicePermissionsSection />
           <Row
             icon={<MapPinOff className="h-4 w-4" />}
             label="Limpar localização salva"
@@ -1152,4 +1163,181 @@ function Row({
       </span>
     </button>
   );
+}
+
+const permissionItems: Array<{
+  kind: DevicePermissionKind;
+  icon: React.ReactNode;
+  label: string;
+  helper: string;
+}> = [
+  {
+    kind: "location",
+    icon: <LocateFixed className="h-4 w-4" />,
+    label: "Localização",
+    helper: "Mostra rolês e eventos perto de você.",
+  },
+  {
+    kind: "camera",
+    icon: <Camera className="h-4 w-4" />,
+    label: "Câmera",
+    helper: "Usada em QR code e fotos de postagem.",
+  },
+  {
+    kind: "photos",
+    icon: <Images className="h-4 w-4" />,
+    label: "Galeria",
+    helper: "Permite escolher fotos para perfil e postagens.",
+  },
+  {
+    kind: "notifications",
+    icon: <Bell className="h-4 w-4" />,
+    label: "Notificações",
+    helper: "Avisa sobre eventos, comentários e novidades.",
+  },
+];
+
+function DevicePermissionsSection() {
+  const [statuses, setStatuses] = useState<DevicePermissionStatuses | null>(null);
+  const [requesting, setRequesting] = useState<DevicePermissionKind | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getDevicePermissionStatuses()
+      .then((nextStatuses) => {
+        if (!cancelled) setStatuses(nextStatuses);
+      })
+      .catch(() => {
+        if (!cancelled) setStatuses(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function requestPermission(kind: DevicePermissionKind) {
+    if (requesting) return;
+
+    setRequesting(kind);
+    try {
+      const nextState = await requestDevicePermission(kind);
+      const nextStatuses = await getDevicePermissionStatuses();
+      setStatuses(nextStatuses);
+      toastPermissionResult(nextState);
+    } catch {
+      toast.error("Não foi possível verificar essa permissão agora.");
+    } finally {
+      setRequesting(null);
+    }
+  }
+
+  return (
+    <section className="rounded-3xl border border-border bg-muted/40 p-3">
+      <div className="px-1 pb-2">
+        <h3 className="text-sm font-black tracking-tight">Permissões do aparelho</h3>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          Controle rápido do que ajuda o ChegaAí a funcionar como app nativo.
+        </p>
+      </div>
+      <div className="divide-y divide-border/70 overflow-hidden rounded-2xl bg-background">
+        {permissionItems.map((item) => (
+          <PermissionRow
+            key={item.kind}
+            {...item}
+            state={statuses?.[item.kind] ?? "unavailable"}
+            loading={!statuses || requesting === item.kind}
+            onClick={() => void requestPermission(item.kind)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PermissionRow({
+  icon,
+  label,
+  helper,
+  state,
+  loading,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  helper: string;
+  state: DevicePermissionState;
+  loading: boolean;
+  onClick: () => void;
+}) {
+  const isActionable = state === "prompt" || state === "denied" || state === "limited";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading || state === "unavailable"}
+      className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-70"
+    >
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-foreground">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-bold">{label}</span>
+        <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{helper}</span>
+      </span>
+      <span
+        className={cn(
+          "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black",
+          permissionBadgeClassName(state),
+        )}
+      >
+        {loading ? "Vendo..." : permissionLabel(state)}
+      </span>
+      {isActionable ? <span className="sr-only">Tocar para solicitar permissão</span> : null}
+    </button>
+  );
+}
+
+function permissionLabel(state: DevicePermissionState) {
+  if (state === "granted") return "Ativa";
+  if (state === "limited") return "Limitada";
+  if (state === "prompt") return "Pedir";
+  if (state === "denied") return "Bloqueada";
+  return "Indisp.";
+}
+
+function permissionBadgeClassName(state: DevicePermissionState) {
+  if (state === "granted")
+    return "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300";
+  if (state === "limited")
+    return "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300";
+  if (state === "prompt") return "bg-primary/10 text-primary";
+  if (state === "denied") return "bg-muted text-muted-foreground";
+  return "bg-muted text-muted-foreground";
+}
+
+function toastPermissionResult(state: DevicePermissionState) {
+  if (state === "granted") {
+    toast.success("Permissão ativa.");
+    return;
+  }
+
+  if (state === "limited") {
+    toast.message("Permissão limitada. Você pode ajustar isso nas configurações do aparelho.");
+    return;
+  }
+
+  if (state === "denied") {
+    toast.message("Permissão bloqueada. Abra as configurações do aparelho para liberar.");
+    return;
+  }
+
+  if (state === "prompt") {
+    toast.message("Toque novamente quando quiser liberar essa permissão.");
+    return;
+  }
+
+  toast.error("Permissão indisponível neste dispositivo.");
 }

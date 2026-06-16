@@ -1,5 +1,22 @@
-import { Camera, CheckCircle2, ImagePlus, LoaderCircle, MapPin, UsersRound, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  Camera as CameraPlugin,
+  CameraDirection,
+  EncodingType,
+  MediaTypeSelection,
+  type MediaResult,
+} from "@capacitor/camera";
+import { Capacitor } from "@capacitor/core";
+import {
+  Camera as CameraIcon,
+  CheckCircle2,
+  ImagePlus,
+  Images,
+  LoaderCircle,
+  MapPin,
+  UsersRound,
+  X,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { AppSelect } from "@/components/app-form-controls";
 import {
@@ -43,6 +60,8 @@ export function PostComposer({
   const loadOptions = useServerFn(getPostComposerEvents);
   const upload = useServerFn(uploadMedia);
   const createPost = useServerFn(createUserPost);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const [options, setOptions] = useState<PostComposerEventOption[]>([]);
   const [eventId, setEventId] = useState("");
   const [caption, setCaption] = useState("");
@@ -95,10 +114,14 @@ export function PostComposer({
 
   function handleFiles(files: FileList | null) {
     if (!files) return;
+    addPhotoFiles(Array.from(files));
+  }
+
+  function addPhotoFiles(files: File[]) {
     const remaining = 3 - photos.length;
-    const nextFiles = Array.from(files)
-      .filter((file) => file.type.startsWith("image/"))
-      .slice(0, remaining);
+    if (remaining <= 0) return;
+
+    const nextFiles = files.filter((file) => file.type.startsWith("image/")).slice(0, remaining);
     if (nextFiles.length === 0) return;
 
     setPhotos((current) => [
@@ -109,6 +132,62 @@ export function PostComposer({
         previewUrl: URL.createObjectURL(file),
       })),
     ]);
+  }
+
+  async function addFromCamera() {
+    if (photos.length >= 3) return;
+
+    if (!Capacitor.isNativePlatform()) {
+      cameraInputRef.current?.click();
+      return;
+    }
+
+    try {
+      const result = await CameraPlugin.takePhoto({
+        quality: 86,
+        targetWidth: 1600,
+        targetHeight: 1600,
+        correctOrientation: true,
+        encodingType: EncodingType.JPEG,
+        cameraDirection: CameraDirection.Rear,
+        saveToGallery: false,
+        includeMetadata: true,
+      });
+      addPhotoFiles([await mediaResultToFile(result, "camera")]);
+    } catch (cause) {
+      if (!isUserCancelledMediaPicker(cause)) {
+        onStatus("Não foi possível abrir a câmera agora.");
+      }
+    }
+  }
+
+  async function addFromGallery() {
+    if (photos.length >= 3) return;
+
+    if (!Capacitor.isNativePlatform()) {
+      galleryInputRef.current?.click();
+      return;
+    }
+
+    const remaining = 3 - photos.length;
+    try {
+      const result = await CameraPlugin.chooseFromGallery({
+        mediaType: MediaTypeSelection.Photo,
+        allowMultipleSelection: remaining > 1,
+        limit: remaining,
+        includeMetadata: true,
+      });
+      const files = await Promise.all(
+        result.results
+          .slice(0, remaining)
+          .map((photo, index) => mediaResultToFile(photo, `galeria-${index}`)),
+      );
+      addPhotoFiles(files);
+    } catch (cause) {
+      if (!isUserCancelledMediaPicker(cause)) {
+        onStatus("Não foi possível abrir a galeria agora.");
+      }
+    }
   }
 
   async function submit() {
@@ -202,7 +281,7 @@ export function PostComposer({
                 </div>
               ) : null}
 
-              <label className="block">
+              <div>
                 <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">
                   Fotos
                 </span>
@@ -230,21 +309,48 @@ export function PostComposer({
                       </button>
                     </div>
                   ))}
-                  {photos.length < 3 ? (
-                    <label className="flex h-28 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-primary/40 bg-primary/5 text-primary">
-                      <ImagePlus className="h-6 w-6" />
-                      <span className="mt-1 text-xs font-black">Adicionar</span>
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        multiple
-                        className="hidden"
-                        onChange={(event) => handleFiles(event.target.files)}
-                      />
-                    </label>
-                  ) : null}
                 </div>
-              </label>
+                {photos.length < 3 ? (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void addFromCamera()}
+                      className="flex h-12 items-center justify-center gap-2 rounded-full bg-foreground px-4 text-sm font-black text-background transition-transform active:scale-[0.98]"
+                    >
+                      <CameraIcon className="h-4 w-4" />
+                      Câmera
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void addFromGallery()}
+                      className="flex h-12 items-center justify-center gap-2 rounded-full bg-muted px-4 text-sm font-black text-foreground transition-opacity active:opacity-80"
+                    >
+                      <Images className="h-4 w-4" />
+                      Galeria
+                    </button>
+                    <input
+                      ref={cameraInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(event) => handleFiles(event.target.files)}
+                    />
+                    <input
+                      ref={galleryInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      className="hidden"
+                      onChange={(event) => handleFiles(event.target.files)}
+                    />
+                  </div>
+                ) : null}
+                <p className="mt-2 flex items-center gap-1.5 text-xs leading-relaxed text-muted-foreground">
+                  <ImagePlus className="h-3.5 w-3.5" />
+                  Até 3 fotos do rolê, tiradas agora ou escolhidas da galeria.
+                </p>
+              </div>
 
               <label className="block">
                 <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">
@@ -285,7 +391,7 @@ export function PostComposer({
             {loading ? (
               <LoaderCircle className="h-4 w-4 animate-spin" />
             ) : (
-              <Camera className="h-4 w-4" />
+              <CameraIcon className="h-4 w-4" />
             )}
             Publicar agora
           </button>
@@ -293,6 +399,42 @@ export function PostComposer({
       </DialogContent>
     </Dialog>
   );
+}
+
+async function mediaResultToFile(result: MediaResult, fallbackName: string) {
+  const source = result.webPath ?? result.uri;
+  if (!source) throw new Error("Imagem indisponível.");
+
+  const response = await fetch(source);
+  const blob = await response.blob();
+  const mimeType = normalizeImageMimeType(blob.type, result.metadata?.format);
+  const extension = extensionFromMimeType(mimeType);
+
+  return new File([blob], `${fallbackName}-${Date.now()}.${extension}`, {
+    type: mimeType,
+    lastModified: Date.now(),
+  });
+}
+
+function normalizeImageMimeType(blobType: string, format?: string) {
+  if (blobType.startsWith("image/")) return blobType;
+
+  const normalizedFormat = format?.toLowerCase();
+  if (normalizedFormat === "png") return "image/png";
+  if (normalizedFormat === "webp") return "image/webp";
+  return "image/jpeg";
+}
+
+function extensionFromMimeType(mimeType: string) {
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  return "jpg";
+}
+
+function isUserCancelledMediaPicker(cause: unknown) {
+  const message =
+    cause instanceof Error ? cause.message.toLowerCase() : String(cause).toLowerCase();
+  return message.includes("cancel") || message.includes("dismiss") || message.includes("abort");
 }
 
 function fileToBase64(file: File) {
