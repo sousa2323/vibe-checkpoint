@@ -27,6 +27,7 @@ import {
   type EventSummary,
 } from "@/lib/data";
 import { canEventAcceptExplorerActions } from "@/lib/event-time";
+import { cn } from "@/lib/utils";
 import {
   buildEventShareText,
   getCheckinReward,
@@ -322,6 +323,7 @@ function EventDetailPage() {
           saving={reviewSaving}
           onChange={setReviewDraft}
           onSubmit={submitReview}
+          onBlocked={(reason) => setStatus(reason)}
         />
       </section>
 
@@ -376,6 +378,7 @@ function ReviewPanel({
   saving,
   onChange,
   onSubmit,
+  onBlocked,
 }: {
   checkedIn: boolean;
   draft: ReviewDraft;
@@ -385,8 +388,14 @@ function ReviewPanel({
   saving: boolean;
   onChange: (draft: ReviewDraft) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onBlocked: (reason: string) => void;
 }) {
   const readyToSubmit = checkedIn && reviewAvailable && isReviewDraftComplete(draft) && !saving;
+  const canEdit = checkedIn && !saving;
+  const lockReason = !checkedIn ? "Faça check-in no evento para avaliar." : null;
+  const notifyBlocked = () => {
+    if (lockReason) onBlocked(lockReason);
+  };
 
   if (review && !editing) {
     return (
@@ -445,9 +454,10 @@ function ReviewPanel({
         Dê notas simples para ajudar outras pessoas a decidirem o próximo rolê.
       </p>
 
-      {!checkedIn ? (
-        <p className="mt-4 rounded-2xl bg-muted p-3 text-sm font-semibold text-muted-foreground">
-          Faça check-in no evento para liberar a avaliação.
+      {lockReason ? (
+        <p className="mt-4 flex items-center gap-2 rounded-2xl bg-primary/10 p-3 text-sm font-bold text-primary">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          {lockReason}
         </p>
       ) : null}
 
@@ -455,26 +465,34 @@ function ReviewPanel({
         <RatingField
           label="Ambiente"
           value={draft.atmosphere}
-          disabled={!checkedIn || saving}
+          canEdit={canEdit}
+          saving={saving}
           onChange={(atmosphere) => onChange({ ...draft, atmosphere })}
+          onBlocked={notifyBlocked}
         />
         <RatingField
           label="Música"
           value={draft.music}
-          disabled={!checkedIn || saving}
+          canEdit={canEdit}
+          saving={saving}
           onChange={(music) => onChange({ ...draft, music })}
+          onBlocked={notifyBlocked}
         />
         <RatingField
           label="Preço"
           value={draft.price}
-          disabled={!checkedIn || saving}
+          canEdit={canEdit}
+          saving={saving}
           onChange={(price) => onChange({ ...draft, price })}
+          onBlocked={notifyBlocked}
         />
         <RatingField
           label="Movimento"
           value={draft.movement}
-          disabled={!checkedIn || saving}
+          canEdit={canEdit}
+          saving={saving}
           onChange={(movement) => onChange({ ...draft, movement })}
+          onBlocked={notifyBlocked}
         />
 
         <label className="block">
@@ -482,17 +500,30 @@ function ReviewPanel({
           <textarea
             value={draft.comment}
             onChange={(event) => onChange({ ...draft, comment: event.currentTarget.value })}
-            disabled={!checkedIn || saving}
+            onFocus={canEdit ? undefined : notifyBlocked}
+            onClick={canEdit ? undefined : notifyBlocked}
+            readOnly={!canEdit}
+            disabled={saving}
             maxLength={240}
             rows={3}
-            className="mt-2 w-full resize-none rounded-2xl bg-muted px-4 py-3 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
+            className="mt-2 w-full resize-none rounded-2xl bg-muted px-4 py-3 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60 read-only:opacity-60"
             placeholder="Ex: fila rápida, som bom, preço justo..."
           />
         </label>
 
-        <PillButton type="submit" className="w-full" disabled={!readyToSubmit}>
-          {saving ? "Salvando..." : review ? "Atualizar avaliação" : "Enviar avaliação"}
-        </PillButton>
+        {readyToSubmit || saving ? (
+          <PillButton type="submit" className="w-full" disabled={!readyToSubmit}>
+            {saving ? "Salvando..." : review ? "Atualizar avaliação" : "Enviar avaliação"}
+          </PillButton>
+        ) : (
+          <PillButton
+            type="button"
+            className="w-full"
+            onClick={() => onBlocked(lockReason ?? "Escolha notas de 1 a 5 em todos os critérios.")}
+          >
+            {review ? "Atualizar avaliação" : "Enviar avaliação"}
+          </PillButton>
+        )}
       </form>
     </section>
   );
@@ -519,24 +550,32 @@ function ReviewScore({ label, value }: { label: string; value: number }) {
 function RatingField({
   label,
   value,
-  disabled,
+  canEdit,
+  saving,
   onChange,
+  onBlocked,
 }: {
   label: string;
   value: number;
-  disabled: boolean;
+  canEdit: boolean;
+  saving: boolean;
   onChange: (value: number) => void;
+  onBlocked: () => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="text-sm font-bold">{label}</span>
-      <div className="flex items-center gap-1" aria-label={`${label}: ${value} de 5`}>
+      <div
+        className={cn("flex items-center gap-1", !canEdit && "opacity-60")}
+        aria-label={`${label}: ${value} de 5`}
+      >
         {[1, 2, 3, 4, 5].map((rating) => (
           <button
             key={rating}
             type="button"
-            disabled={disabled}
-            onClick={() => onChange(rating)}
+            disabled={saving}
+            aria-disabled={!canEdit}
+            onClick={() => (canEdit ? onChange(rating) : onBlocked())}
             className="flex h-8 w-8 items-center justify-center rounded-full transition disabled:opacity-60"
             aria-label={`${rating} de 5`}
           >
