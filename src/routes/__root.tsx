@@ -173,7 +173,14 @@ function RootComponent() {
   }, []);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      console.info("[push] Root has no authenticated user; native push registration skipped.");
+      return;
+    }
+
+    console.info("[push] Root requesting native push registration.", {
+      userIdLength: userId.length,
+    });
 
     void registerNativePushNotifications({
       userId,

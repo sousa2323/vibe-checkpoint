@@ -4,6 +4,27 @@ import { PushNotifications } from "@capacitor/push-notifications";
 import type { PushPlatform } from "@/lib/data";
 
 const ANDROID_NOTIFICATION_CHANNEL_ID = "default";
+const ANDROID_TOKEN_ROTATION_STORAGE_KEY = "chegaai:android-push-token-rotation:v1";
+const LOG_PREFIX = "[push]";
+
+function logInfo(message: string, data?: unknown) {
+  console.info(`${LOG_PREFIX} ${message}${formatLogData(data)}`);
+}
+
+function logWarn(message: string, data?: unknown) {
+  console.warn(`${LOG_PREFIX} ${message}${formatLogData(data)}`);
+}
+
+function formatLogData(data: unknown) {
+  if (data === undefined) return "";
+  if (data instanceof Error) return ` ${data.message}`;
+
+  try {
+    return ` ${JSON.stringify(data)}`;
+  } catch (_error) {
+    return " [unserializable]";
+  }
+}
 
 function routeFromData(data: unknown): string | undefined {
   const route = (data as { route?: unknown } | null | undefined)?.route;
@@ -16,7 +37,9 @@ let latestOpenRoute: ((route: string) => void) | undefined;
 let latestSaveToken:
   | ((data: { token: string; platform: PushPlatform }) => Promise<void>)
   | undefined;
+let latestUserId: string | undefined;
 let androidNotificationPresentationReady = false;
+let registrationInFlightUserId: string | undefined;
 
 export async function registerNativePushNotifications({
   userId,
@@ -33,13 +56,16 @@ export async function registerNativePushNotifications({
   // evento `registration` salve o token sob o userId correto mesmo após trocar de conta.
   latestOpenRoute = openRoute;
   latestSaveToken = saveToken;
+  latestUserId = userId;
 
-  // Já registrado com sucesso para este mesmo usuário: nada a fazer.
-  if (registeredUserId === userId) return;
+  if (registrationInFlightUserId === userId) return;
 
   try {
+    registrationInFlightUserId = userId;
+
     if (!listenersReady) {
       listenersReady = true;
+      logInfo("Registering native push listeners.");
 
       await PushNotifications.addListener("pushNotificationActionPerformed", (event) => {
         const route = routeFromData(event.notification.data);
@@ -47,50 +73,79 @@ export async function registerNativePushNotifications({
       });
 
       await PushNotifications.addListener("registration", (token) => {
-        void latestSaveToken?.({
-          token: token.value,
-          platform: normalizePlatform(Capacitor.getPlatform()),
+        const platform = normalizePlatform(Capacitor.getPlatform());
+        logInfo("Native push token received.", {
+          platform,
+          tokenLength: token.value.length,
         });
+
+        void latestSaveToken?.({ token: token.value, platform })
+          .then(() => {
+            registeredUserId = latestUserId;
+            logInfo("Native push token saved.");
+          })
+          .catch((error) => {
+            registeredUserId = undefined;
+            logWarn("Failed to save native push token.", error);
+          });
       });
 
-      // Android não exibe o push na bandeja quando o app está em primeiro plano:
-      // ele entrega aqui. Reexibimos via notificação local para o aviso aparecer
-      // mesmo com o app aberto (no iOS o presentationOptions já cuida disso).
-      if (Capacitor.getPlatform() === "android") {
-        await PushNotifications.addListener("pushNotificationReceived", (notification) => {
-          void showAndroidForegroundNotification(notification);
-        });
+      await PushNotifications.addListener("registrationError", (error) => {
+        registeredUserId = undefined;
+        logWarn("Native push registration failed.", error);
+      });
 
-        await LocalNotifications.addListener("localNotificationActionPerformed", (event) => {
-          const route = routeFromData(event.notification.extra);
-          if (route) latestOpenRoute?.(route);
-        });
-      }
+      // Foreground Android delivery is handled by the native push plugin/system
+      // presentation. Avoid re-scheduling locally, which duplicates notifications.
     }
 
     // Só pede permissão quando o SO ainda não decidiu. No Android o popup só
     // aparece nesse estado; pedir repetidamente após decisão não reabre o popup.
     let permission = await PushNotifications.checkPermissions();
+    logInfo("Native push permission state.", permission);
     if (permission.receive === "prompt" || permission.receive === "prompt-with-rationale") {
       permission = await PushNotifications.requestPermissions();
+      logInfo("Native push permission requested.", permission);
     }
 
     if (permission.receive !== "granted") {
       // Não marca como registrado: permite nova tentativa em outro login/perfil.
+      logWarn("Native push permission is not granted.", permission);
       return;
     }
 
     if (Capacitor.getPlatform() === "android") {
       await ensureAndroidNotificationPresentation();
+      await rotateAndroidPushTokenOnce();
     }
 
     // Sempre re-registra ao trocar de usuário: reemite o evento `registration`,
     // garantindo que o token atual seja salvo para o userId logado agora.
+    logInfo("Calling native push register.", {
+      platform: Capacitor.getPlatform(),
+      userChanged: registeredUserId !== userId,
+    });
     await PushNotifications.register();
-
-    registeredUserId = userId;
-  } catch {
+  } catch (error) {
     registeredUserId = undefined;
+    logWarn("Failed to start native push registration.", error);
+  } finally {
+    if (registrationInFlightUserId === userId) registrationInFlightUserId = undefined;
+  }
+}
+
+async function rotateAndroidPushTokenOnce() {
+  if (Capacitor.getPlatform() !== "android") return;
+  if (localStorage.getItem(ANDROID_TOKEN_ROTATION_STORAGE_KEY) === "done") return;
+
+  try {
+    logInfo("Rotating Android push token once before registration.");
+    await PushNotifications.unregister();
+    await wait(1_500);
+  } catch (error) {
+    logWarn("Failed to rotate Android push token before registration.", error);
+  } finally {
+    localStorage.setItem(ANDROID_TOKEN_ROTATION_STORAGE_KEY, "done");
   }
 }
 
@@ -122,42 +177,8 @@ async function ensureAndroidNotificationPresentation() {
   return true;
 }
 
-async function showAndroidForegroundNotification(notification: {
-  title?: string;
-  body?: string;
-  data?: Record<string, unknown>;
-}) {
-  try {
-    const canShowLocalNotification = await ensureAndroidNotificationPresentation();
-    if (!canShowLocalNotification) {
-      console.warn("Local notification permission is not granted for foreground push display.");
-      return;
-    }
-
-    const route = routeFromData(notification.data);
-    const title = notification.title ?? stringFromData(notification.data, "title") ?? "ChegaAí";
-    const body = notification.body ?? stringFromData(notification.data, "body") ?? "";
-
-    await LocalNotifications.schedule({
-      notifications: [
-        {
-          id: Date.now() % 2_147_483_647,
-          title,
-          body,
-          channelId: ANDROID_NOTIFICATION_CHANNEL_ID,
-          smallIcon: "ic_stat_chegaai_notification",
-          extra: route ? { route } : undefined,
-        },
-      ],
-    });
-  } catch (error) {
-    console.warn("Failed to show foreground push notification.", error);
-  }
-}
-
-function stringFromData(data: Record<string, unknown> | undefined, key: string) {
-  const value = data?.[key];
-  return typeof value === "string" && value.trim() ? value : undefined;
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizePlatform(platform: string): PushPlatform {

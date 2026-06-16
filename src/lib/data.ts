@@ -3389,6 +3389,13 @@ export const registerPushToken = createServerFn({ method: "POST" })
         platform = EXCLUDED.platform,
         last_seen_at = EXCLUDED.last_seen_at
     `;
+
+    await sql`
+      DELETE FROM public.push_tokens
+      WHERE user_id = ${userId}
+        AND platform = ${platform}
+        AND token <> ${token}
+    `;
   });
 
 export const createEventForOwner = createServerFn({ method: "POST" })
