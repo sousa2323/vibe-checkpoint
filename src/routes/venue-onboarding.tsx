@@ -420,7 +420,7 @@ function VenueOnboarding() {
             Cadastre seu estabelecimento
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            Seu local será criado com dados reais para aparecer no app, receber eventos e contatos.
+            Seu local será criado para aparecer no app, receber eventos e contatos.
           </p>
         </div>
 

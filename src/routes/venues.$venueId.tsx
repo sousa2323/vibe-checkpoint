@@ -17,9 +17,11 @@ import {
 } from "@/lib/data";
 import { canEventAcceptExplorerActions } from "@/lib/event-time";
 import { buildVenueShareText, getCheckinReward } from "@/lib/growth";
+import { venueDetailsQuery } from "@/lib/queries";
 
 export const Route = createFileRoute("/venues/$venueId")({
-  loader: ({ params }) => getVenueDetails({ data: { venueId: params.venueId } }),
+  loader: ({ params, context }) =>
+    context.queryClient.ensureQueryData(venueDetailsQuery(params.venueId)),
   component: VenueDetailPage,
 });
 

@@ -485,9 +485,7 @@ function VenueDashboard() {
       <main className="app-shell flex min-h-screen flex-col items-center justify-center bg-background px-6 text-center">
         <LoaderCircle className="h-8 w-8 animate-spin text-primary" />
         <p className="mt-4 font-bold">Carregando painel</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Buscando os dados reais do seu estabelecimento.
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">Só um instante...</p>
       </main>
     );
   }
@@ -524,7 +522,7 @@ function VenueDashboard() {
             </h1>
             <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
               <MapPin className="h-3.5 w-3.5" />
-              {venue?.neighborhood ?? "Dados reais do local"}
+              {venue?.neighborhood ?? "Bairro não informado"}
             </p>
           </div>
           <button

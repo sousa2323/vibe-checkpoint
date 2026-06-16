@@ -479,7 +479,7 @@ function Profile() {
       <main className="app-shell flex min-h-screen flex-col items-center justify-center bg-background px-6 text-center">
         <LoaderCircle className="h-8 w-8 animate-spin text-primary" />
         <p className="mt-4 font-bold">Carregando perfil</p>
-        <p className="mt-1 text-sm text-muted-foreground">Buscando seus dados reais.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Só um instante...</p>
       </main>
     );
   }
@@ -650,7 +650,7 @@ function Profile() {
               <Row
                 icon={<CalendarPlus className="h-4 w-4" />}
                 label="Publicar evento"
-                helper="Crie eventos reais no painel."
+                helper="Crie eventos no painel."
                 onClick={() => navigate({ to: "/venue-dashboard" })}
               />
             </>

@@ -803,7 +803,11 @@ async function ensureNotificationReadsSchema(_sql: SqlClient) {
   return;
 }
 
+let notificationsSchemaReady = false;
+
 async function ensureNotificationsSchema(sql: SqlClient) {
+  if (notificationsSchemaReady) return;
+
   await sql`
     CREATE TABLE IF NOT EXISTS public.notifications (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -862,6 +866,8 @@ async function ensureNotificationsSchema(sql: SqlClient) {
     CREATE INDEX IF NOT EXISTS push_tokens_user_idx
     ON public.push_tokens (user_id, last_seen_at DESC)
   `;
+
+  notificationsSchemaReady = true;
 }
 
 async function materializeDueEventReminderNotifications(sql: SqlClient, userId: string) {
@@ -936,7 +942,11 @@ async function ensureEventReviewsSchema(_sql: SqlClient) {
   return;
 }
 
+let eventsRecurrenceSchemaReady = false;
+
 async function ensureEventsRecurrenceSchema(sql: SqlClient) {
+  if (eventsRecurrenceSchemaReady) return;
+
   await sql`
     ALTER TABLE public.events
     ADD COLUMN IF NOT EXISTS recurrence_type text NOT NULL DEFAULT 'none',
@@ -948,6 +958,8 @@ async function ensureEventsRecurrenceSchema(sql: SqlClient) {
     ALTER TABLE public.checkins
     ADD COLUMN IF NOT EXISTS occurrence_starts_at timestamp with time zone
   `;
+
+  eventsRecurrenceSchemaReady = true;
 }
 
 function mapVenue(row: Record<string, unknown>): VenueSummary {
@@ -974,7 +986,11 @@ function mapVenue(row: Record<string, unknown>): VenueSummary {
   };
 }
 
+let rewardsSchemaReady = false;
+
 async function ensureRewardsSchema(sql: SqlClient) {
+  if (rewardsSchemaReady) return;
+
   await sql`
     ALTER TABLE public.venue_rewards
     ADD COLUMN IF NOT EXISTS event_id uuid REFERENCES public.events(id) ON DELETE SET NULL
@@ -985,6 +1001,8 @@ async function ensureRewardsSchema(sql: SqlClient) {
     ON public.venue_rewards (event_id, status, updated_at DESC)
     WHERE event_id IS NOT NULL
   `;
+
+  rewardsSchemaReady = true;
 }
 
 let rewardRedemptionsSchemaReady = false;

@@ -70,7 +70,7 @@ export function ExplorerPreferencesForm({
     >
       <PreferenceGroup
         title="Bairros preferidos"
-        helper={`Baseado nos bairros com locais reais em ${optionsContext}.`}
+        helper={`Baseado nos bairros disponíveis em ${optionsContext}.`}
       >
         {neighborhoodOptions.length ? (
           <ChipGrid>
@@ -91,7 +91,7 @@ export function ExplorerPreferencesForm({
 
       <PreferenceGroup
         title="Estilo de rolê"
-        helper={`Categorias reais dos estabelecimentos em ${optionsContext}.`}
+        helper={`Categorias dos estabelecimentos em ${optionsContext}.`}
       >
         {categoryOptions.length ? (
           <ChipGrid>

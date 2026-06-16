@@ -20,7 +20,6 @@ import { ShareInviteCard } from "@/components/share-invite-card";
 import {
   getEventDetails,
   getUserEventReview,
-  getSavedEventIds,
   toggleCheckin,
   toggleSavedEvent,
   upsertEventReview,
@@ -35,9 +34,11 @@ import {
   getRewardDescription,
   getRewardMeta,
 } from "@/lib/growth";
+import { eventDetailsQuery } from "@/lib/queries";
 
 export const Route = createFileRoute("/events/$eventId")({
-  loader: ({ params }) => getEventDetails({ data: { eventId: params.eventId } }),
+  loader: ({ params, context }) =>
+    context.queryClient.ensureQueryData(eventDetailsQuery(params.eventId)),
   component: EventDetailPage,
 });
 
@@ -49,7 +50,6 @@ function EventDetailPage() {
   const user = data?.user;
   const loadEvent = useServerFn(getEventDetails);
   const loadReview = useServerFn(getUserEventReview);
-  const loadSavedIds = useServerFn(getSavedEventIds);
   const saveReview = useServerFn(upsertEventReview);
   const toggleSaved = useServerFn(toggleSavedEvent);
   const checkin = useServerFn(toggleCheckin);
@@ -70,13 +70,6 @@ function EventDetailPage() {
       })
       .catch(() => undefined);
   }, [eventId, loadEvent, user?.id]);
-
-  useEffect(() => {
-    if (!user?.id || !event) return;
-    loadSavedIds({ data: { userId: user.id } })
-      .then((ids) => setSaved(ids.includes(event.id)))
-      .catch(() => undefined);
-  }, [event, loadSavedIds, user?.id]);
 
   useEffect(() => {
     if (!user?.id) {

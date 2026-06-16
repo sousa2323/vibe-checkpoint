@@ -13,24 +13,21 @@ const slides = [
   {
     title: "Encontre o rolê certo agora",
     desc: "Eventos, bares e pubs acontecendo perto de você, sem ficar procurando em vários lugares.",
-    image:
-      "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1200&auto=format&fit=crop&q=70",
+    image: "/onboarding/slide-1.webp",
     eyebrow: "Descoberta ao vivo",
     icon: MapPin,
   },
   {
     title: "Sinta o clima antes de sair",
     desc: "Veja música ao vivo, movimento e destaques para decidir rápido onde vale chegar.",
-    image:
-      "https://images.unsplash.com/photo-1572116469696-31de0f17cc34?w=1200&auto=format&fit=crop&q=70",
+    image: "/onboarding/slide-2.webp",
     eyebrow: "Clima em tempo real",
     icon: Music2,
   },
   {
     title: "Salve, combine e chegue junto",
     desc: "Guarde seus lugares favoritos, acompanhe eventos e compartilhe os planos com os amigos.",
-    image:
-      "https://images.unsplash.com/photo-1543007630-9710e4a00a20?w=1200&auto=format&fit=crop&q=70",
+    image: "/onboarding/slide-3.webp",
     eyebrow: "Sua noite organizada",
     icon: UsersRound,
   },
@@ -44,6 +41,14 @@ function Onboarding() {
   const slide = slides[i];
   const last = i === slides.length - 1;
   const Icon = slide.icon;
+
+  useEffect(() => {
+    // Pré-carrega todas as imagens no mount para que avançar/pular os slides seja instantâneo.
+    slides.forEach((s) => {
+      const img = new Image();
+      img.src = s.image;
+    });
+  }, []);
 
   useEffect(() => {
     if (isPending || !user?.id) return;
@@ -75,11 +80,18 @@ function Onboarding() {
   return (
     <main className="app-shell flex flex-col overflow-hidden bg-ink text-white">
       <div className="relative min-h-[58dvh] flex-1">
-        <img
-          src={slide.image}
-          alt={slide.title}
-          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-        />
+        {slides.map((s, slideIndex) => (
+          <img
+            key={slideIndex}
+            src={s.image}
+            alt={s.title}
+            aria-hidden={slideIndex !== i}
+            className={cn(
+              "pointer-events-none absolute inset-0 h-full w-full object-cover transition-opacity duration-300",
+              slideIndex === i ? "opacity-100" : "opacity-0",
+            )}
+          />
+        ))}
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/5 to-black/70" />
         <button
           type="button"

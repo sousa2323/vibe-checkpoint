@@ -13,7 +13,9 @@ import { authClient } from "@/auth";
 import { ExplorerPreferencesForm } from "@/components/explorer-preferences-form";
 import { FeedActionNav } from "@/components/feed-action-nav";
 import { RealMap, type RealMapMarker } from "@/components/real-map";
-import { getVenues, reverseLocationLabel, searchLocation, type VenueSummary } from "@/lib/data";
+import { reverseLocationLabel, searchLocation, type VenueSummary } from "@/lib/data";
+import { venuesQuery } from "@/lib/queries";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   canRestoreLocation,
   clampRadiusKm,
@@ -40,11 +42,23 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/map")({
-  loader: () => getVenues(),
+  loader: ({ context }) => context.queryClient.ensureQueryData(venuesQuery()),
+  pendingComponent: MapPending,
   component: MapView,
 });
 
 const RADIUS_PRESETS = [1, 3, 5, 10, 25];
+
+function MapPending() {
+  return (
+    <main className="app-shell flex flex-col bg-background">
+      <div className="space-y-4 px-5 pt-[calc(env(safe-area-inset-top)+1rem)]">
+        <Skeleton className="h-11 w-full rounded-full" />
+        <Skeleton className="h-[60dvh] w-full rounded-2xl" />
+      </div>
+    </main>
+  );
+}
 
 function MapView() {
   const venues = Route.useLoaderData();
@@ -546,7 +560,7 @@ function MapView() {
           <div className="rounded-3xl border border-border p-6 text-center">
             <p className="font-bold">Nenhum estabelecimento próximo</p>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Aumente o raio ou busque outra região para encontrar locais reais.
+              Aumente o raio ou busque outra região para encontrar mais locais.
             </p>
           </div>
         ) : (
