@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getSql, type SqlClient, uniqueSlug } from "./db";
 import {
   EVENT_ACTIVE_WINDOW_HOURS,
+  EVENT_POST_WINDOW_HOURS,
   getWeeklyRecurrenceParts,
   type EventRecurrenceType,
 } from "./event-time";
@@ -443,6 +444,7 @@ const currencyFormatter = new Intl.NumberFormat("pt-BR", {
 });
 
 const eventActiveWindowInterval = `${EVENT_ACTIVE_WINDOW_HOURS} hours`;
+const eventPostWindowInterval = `${EVENT_POST_WINDOW_HOURS} hours`;
 
 function normalizeRecurrence(type?: EventRecurrenceType, startsAt?: string) {
   if (type !== "weekly") {
@@ -2105,7 +2107,7 @@ export const getPostComposerEvents = createServerFn({ method: "GET" })
       WHERE c.user_id = ${userId}
         AND e.status = 'published'
         AND occurrence.starts_at <= now()
-        AND occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval
+        AND occurrence.starts_at >= now() - ${eventPostWindowInterval}::interval
         AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
       ORDER BY e.title ASC
     `;
@@ -2123,7 +2125,7 @@ export const createUserPost = createServerFn({ method: "POST" })
   .inputValidator((data: CreateUserPostInput) => data)
   .handler(async ({ data }): Promise<FeedPostSummary> => {
     const userId = await requireAuthenticatedUserId(data.userId);
-    if (!data.eventId) throw new Error("Selecione um evento acontecendo agora.");
+    if (!data.eventId) throw new Error("Selecione um evento recente.");
 
     const caption = data.caption.trim();
     const taggedPerson = data.taggedPerson?.trim();
@@ -2151,7 +2153,7 @@ export const createUserPost = createServerFn({ method: "POST" })
             CASE
               WHEN date_trunc('day', now())
                 + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
-                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
+                + e.recurrence_time > now() - ${eventPostWindowInterval}::interval
               THEN date_trunc('day', now())
                 + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
                 + e.recurrence_time
@@ -2167,12 +2169,12 @@ export const createUserPost = createServerFn({ method: "POST" })
         AND e.id = ${data.eventId}
         AND e.status = 'published'
         AND occurrence.starts_at <= now()
-        AND occurrence.starts_at >= now() - ${eventActiveWindowInterval}::interval
+        AND occurrence.starts_at >= now() - ${eventPostWindowInterval}::interval
         AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
       LIMIT 1
     `;
     const event = events[0];
-    if (!event) throw new Error("Faça check-in em um evento acontecendo agora para postar.");
+    if (!event) throw new Error("Faça check-in em um evento recente para postar.");
 
     const posts = await sql`
       INSERT INTO public.user_posts (user_id, venue_id, event_id, caption, tagged_person)

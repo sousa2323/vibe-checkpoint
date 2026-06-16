@@ -1,6 +1,10 @@
 export const EVENT_ACTIVE_WINDOW_HOURS = 24;
+export const EVENT_ASSUMED_DURATION_HOURS = 6;
+export const EVENT_POST_GRACE_HOURS = 2;
+export const EVENT_POST_WINDOW_HOURS = EVENT_ASSUMED_DURATION_HOURS + EVENT_POST_GRACE_HOURS;
 
 const EVENT_ACTIVE_WINDOW_MS = EVENT_ACTIVE_WINDOW_HOURS * 60 * 60 * 1000;
+const EVENT_POST_WINDOW_MS = EVENT_POST_WINDOW_HOURS * 60 * 60 * 1000;
 
 export type EventRecurrenceType = "none" | "weekly";
 
@@ -43,6 +47,13 @@ export function canEventAcceptExplorerActions(startsAt: string, now = Date.now()
   if (!Number.isFinite(startsAtTime)) return false;
 
   return now < startsAtTime + EVENT_ACTIVE_WINDOW_MS;
+}
+
+export function canEventAcceptPosts(startsAt: string, now = Date.now()) {
+  const startsAtTime = new Date(startsAt).getTime();
+  if (!Number.isFinite(startsAtTime)) return false;
+
+  return now >= startsAtTime && now < startsAtTime + EVENT_POST_WINDOW_MS;
 }
 
 export function canEventAppearInGroupVoting(startsAt: string, now = Date.now()) {

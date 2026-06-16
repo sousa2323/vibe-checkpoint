@@ -52,13 +52,21 @@ export function PostComposer({
   const selectedEvent = options.find((option) => option.id === eventId);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setOptions([]);
+      setEventId("");
+      return;
+    }
     if (!userId) {
+      setOptions([]);
+      setEventId("");
       onRequireAuth();
       return;
     }
 
     let cancelled = false;
+    setOptions([]);
+    setEventId("");
     loadOptions({ data: { userId } })
       .then((nextOptions) => {
         if (cancelled) return;
@@ -66,7 +74,10 @@ export function PostComposer({
         setEventId(nextOptions[0]?.id ?? "");
       })
       .catch(() => {
-        if (!cancelled) setOptions([]);
+        if (!cancelled) {
+          setOptions([]);
+          setEventId("");
+        }
       });
 
     return () => {
@@ -106,7 +117,11 @@ export function PostComposer({
       return;
     }
     if (!eventId) {
-      onStatus("Faça check-in em um evento acontecendo agora para postar.");
+      onStatus("Faça check-in em um evento recente para postar.");
+      return;
+    }
+    if (!selectedEvent) {
+      onStatus("Esse evento não está mais disponível para postagem.");
       return;
     }
     if (!caption.trim() && photos.length === 0) {
@@ -163,9 +178,9 @@ export function PostComposer({
           {options.length === 0 ? (
             <div className="rounded-3xl bg-muted p-5 text-center">
               <CheckCircle2 className="mx-auto h-8 w-8 text-primary" />
-              <p className="mt-3 font-black">Nenhum check-in acontecendo agora</p>
+              <p className="mt-3 font-black">Nenhum evento recente para postar</p>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                Confirme presença em um evento ao vivo para criar uma postagem vinculada ao local.
+                Faça check-in durante o evento para publicar enquanto o rolê ainda está recente.
               </p>
             </div>
           ) : (
@@ -264,7 +279,7 @@ export function PostComposer({
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={loading || options.length === 0}
+            disabled={loading || !selectedEvent}
             className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-primary text-sm font-black text-primary-foreground shadow-[0_16px_36px_-20px_rgba(0,0,0,0.8)] disabled:opacity-50"
           >
             {loading ? (

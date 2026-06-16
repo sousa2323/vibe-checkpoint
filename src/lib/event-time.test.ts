@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   canEventAcceptExplorerActions,
+  canEventAcceptPosts,
   canEventAppearInGroupVoting,
   EVENT_ACTIVE_WINDOW_HOURS,
+  EVENT_POST_WINDOW_HOURS,
   getNextWeeklyOccurrence,
   getWeeklyRecurrenceParts,
 } from "./event-time";
@@ -26,6 +28,29 @@ describe("canEventAcceptExplorerActions", () => {
 
   it("rejects invalid dates", () => {
     expect(canEventAcceptExplorerActions("invalid-date", Date.now())).toBe(false);
+  });
+});
+
+describe("canEventAcceptPosts", () => {
+  it("accepts posts while the post window is open", () => {
+    const startsAt = "2026-06-02T20:00:00.000Z";
+    const now = new Date(startsAt).getTime() + (EVENT_POST_WINDOW_HOURS - 1) * hourMs;
+
+    expect(canEventAcceptPosts(startsAt, now)).toBe(true);
+  });
+
+  it("rejects posts before the event starts", () => {
+    const startsAt = "2026-06-02T20:00:00.000Z";
+    const now = new Date(startsAt).getTime() - hourMs;
+
+    expect(canEventAcceptPosts(startsAt, now)).toBe(false);
+  });
+
+  it("rejects posts after the post window closes", () => {
+    const startsAt = "2026-06-02T20:00:00.000Z";
+    const now = new Date(startsAt).getTime() + EVENT_POST_WINDOW_HOURS * hourMs;
+
+    expect(canEventAcceptPosts(startsAt, now)).toBe(false);
   });
 });
 
