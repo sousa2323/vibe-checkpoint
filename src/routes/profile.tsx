@@ -1173,27 +1173,27 @@ const permissionItems: Array<{
 }> = [
   {
     kind: "location",
-    icon: <LocateFixed className="h-4 w-4" />,
+    icon: <LocateFixed className="h-3.5 w-3.5" />,
     label: "Localização",
-    helper: "Mostra rolês e eventos perto de você.",
+    helper: "Eventos perto de você",
   },
   {
     kind: "camera",
-    icon: <Camera className="h-4 w-4" />,
+    icon: <Camera className="h-3.5 w-3.5" />,
     label: "Câmera",
-    helper: "Usada em QR code e fotos de postagem.",
+    helper: "Fotos e QR code",
   },
   {
     kind: "photos",
-    icon: <Images className="h-4 w-4" />,
+    icon: <Images className="h-3.5 w-3.5" />,
     label: "Galeria",
-    helper: "Permite escolher fotos para perfil e postagens.",
+    helper: "Escolher imagens",
   },
   {
     kind: "notifications",
-    icon: <Bell className="h-4 w-4" />,
+    icon: <Bell className="h-3.5 w-3.5" />,
     label: "Notificações",
-    helper: "Avisa sobre eventos, comentários e novidades.",
+    helper: "Avisos importantes",
   },
 ];
 
@@ -1234,14 +1234,14 @@ function DevicePermissionsSection() {
   }
 
   return (
-    <section className="rounded-3xl border border-border bg-muted/40 p-3">
-      <div className="px-1 pb-2">
-        <h3 className="text-sm font-black tracking-tight">Permissões do aparelho</h3>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          Controle rápido do que ajuda o ChegaAí a funcionar como app nativo.
+    <section className="rounded-[1.6rem] border border-border/70 bg-background/40 px-3 py-3">
+      <div className="px-0.5 pb-2.5">
+        <h3 className="text-sm font-extrabold tracking-tight">Permissões</h3>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+          Acessos usados pelos recursos do app.
         </p>
       </div>
-      <div className="divide-y divide-border/70 overflow-hidden rounded-2xl bg-background">
+      <div className="divide-y divide-border/60">
         {permissionItems.map((item) => (
           <PermissionRow
             key={item.kind}
@@ -1278,21 +1278,22 @@ function PermissionRow({
       type="button"
       onClick={onClick}
       disabled={loading || state === "unavailable"}
-      className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-70"
+      className="flex w-full items-center gap-2.5 py-2.5 text-left transition-colors hover:bg-muted/30 disabled:cursor-not-allowed disabled:opacity-70"
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-foreground">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted/70 text-muted-foreground">
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-bold">{label}</span>
-        <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{helper}</span>
+        <span className="block text-sm font-semibold leading-tight">{label}</span>
+        <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{helper}</span>
       </span>
       <span
         className={cn(
-          "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black",
-          permissionBadgeClassName(state),
+          "inline-flex shrink-0 items-center gap-1.5 text-[11px] font-semibold",
+          permissionStatusClassName(state),
         )}
       >
+        <span className="h-1.5 w-1.5 rounded-full bg-current opacity-80" aria-hidden="true" />
         {loading ? "Vendo..." : permissionLabel(state)}
       </span>
       {isActionable ? <span className="sr-only">Tocar para solicitar permissão</span> : null}
@@ -1308,14 +1309,11 @@ function permissionLabel(state: DevicePermissionState) {
   return "Indisp.";
 }
 
-function permissionBadgeClassName(state: DevicePermissionState) {
-  if (state === "granted")
-    return "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300";
-  if (state === "limited")
-    return "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300";
-  if (state === "prompt") return "bg-primary/10 text-primary";
-  if (state === "denied") return "bg-muted text-muted-foreground";
-  return "bg-muted text-muted-foreground";
+function permissionStatusClassName(state: DevicePermissionState) {
+  if (state === "granted") return "text-emerald-600 dark:text-emerald-300";
+  if (state === "limited") return "text-amber-600 dark:text-amber-300";
+  if (state === "prompt") return "text-primary";
+  return "text-muted-foreground";
 }
 
 function toastPermissionResult(state: DevicePermissionState) {
