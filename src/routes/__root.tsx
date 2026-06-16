@@ -12,6 +12,7 @@ import { useEffect } from "react";
 
 import { authClient } from "@/auth";
 import { registerPushToken } from "@/lib/data";
+import { registerNativeBackButton } from "@/lib/native-back-button";
 import { registerNativePushNotifications } from "@/lib/push-notifications";
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import appCss from "../styles.css?url";
@@ -157,6 +158,10 @@ function RootComponent() {
   const { data } = authClient.useSession();
   const userId = data?.user?.id;
   const savePushToken = useServerFn(registerPushToken);
+
+  useEffect(() => {
+    void registerNativeBackButton(router);
+  }, [router]);
 
   useEffect(() => {
     const initialPath = window.__CHEGAAI_CAPACITOR_INITIAL_PATH;
