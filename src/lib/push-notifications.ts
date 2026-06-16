@@ -1,6 +1,12 @@
 import { Capacitor } from "@capacitor/core";
+import { LocalNotifications } from "@capacitor/local-notifications";
 import { PushNotifications } from "@capacitor/push-notifications";
 import type { PushPlatform } from "@/lib/data";
+
+function routeFromData(data: unknown): string | undefined {
+  const route = (data as { route?: unknown } | null | undefined)?.route;
+  return typeof route === "string" && route.startsWith("/") ? route : undefined;
+}
 
 let registeredUserId: string | undefined;
 let listenersReady = false;
@@ -33,10 +39,8 @@ export async function registerNativePushNotifications({
       listenersReady = true;
 
       await PushNotifications.addListener("pushNotificationActionPerformed", (event) => {
-        const route = event.notification.data?.route;
-        if (typeof route === "string" && route.startsWith("/")) {
-          latestOpenRoute?.(route);
-        }
+        const route = routeFromData(event.notification.data);
+        if (route) latestOpenRoute?.(route);
       });
 
       await PushNotifications.addListener("registration", (token) => {
@@ -45,6 +49,32 @@ export async function registerNativePushNotifications({
           platform: normalizePlatform(Capacitor.getPlatform()),
         });
       });
+
+      // Android não exibe o push na bandeja quando o app está em primeiro plano:
+      // ele entrega aqui. Reexibimos via notificação local para o aviso aparecer
+      // mesmo com o app aberto (no iOS o presentationOptions já cuida disso).
+      if (Capacitor.getPlatform() === "android") {
+        await PushNotifications.addListener("pushNotificationReceived", (notification) => {
+          const route = routeFromData(notification.data);
+          void LocalNotifications.schedule({
+            notifications: [
+              {
+                id: Date.now() % 2_147_483_647,
+                title: notification.title ?? notification.data?.title ?? "ChegaAí",
+                body: notification.body ?? notification.data?.body ?? "",
+                channelId: "default",
+                smallIcon: "ic_stat_chegaai_notification",
+                extra: route ? { route } : undefined,
+              },
+            ],
+          }).catch(() => undefined);
+        });
+
+        await LocalNotifications.addListener("localNotificationActionPerformed", (event) => {
+          const route = routeFromData(event.notification.extra);
+          if (route) latestOpenRoute?.(route);
+        });
+      }
     }
 
     // Só pede permissão quando o SO ainda não decidiu. No Android o popup só

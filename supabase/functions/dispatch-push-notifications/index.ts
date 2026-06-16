@@ -85,6 +85,7 @@ serve(async (request) => {
 
   let sent = 0;
   let failed = 0;
+  let skipped = 0;
   const errors: string[] = [];
 
   for (const notification of notifications ?? []) {
@@ -94,8 +95,20 @@ serve(async (request) => {
       .eq("user_id", notification.user_id)
       .returns<PushTokenRow[]>();
 
-    if (tokenError || !tokens?.length) {
+    if (tokenError) {
       failed += 1;
+      continue;
+    }
+
+    // Sem token cadastrado: não há para quem entregar. Marca como processada para
+    // não deixá-la travar a frente da fila (ordenada por created_at, LIMIT 50) e
+    // bloquear notificações novas e entregáveis de outros usuários.
+    if (!tokens?.length) {
+      skipped += 1;
+      await supabase
+        .from("notifications")
+        .update({ pushed_at: new Date().toISOString() })
+        .eq("id", notification.id);
       continue;
     }
 
@@ -128,7 +141,7 @@ serve(async (request) => {
     }
   }
 
-  return json({ sent, failed, notifications: notifications?.length ?? 0, errors });
+  return json({ sent, failed, skipped, notifications: notifications?.length ?? 0, errors });
 });
 
 async function sendFcmNotification(

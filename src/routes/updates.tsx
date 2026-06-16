@@ -203,7 +203,7 @@ function NotificationItem({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">
-                  {notification.type === "event_reminder" ? (
+                  {notification.type === "event_reminder" || notification.type === "new_event" ? (
                     <CalendarClock className="h-3 w-3" />
                   ) : null}
                   {notificationTypeLabel(notification.type)}
@@ -236,6 +236,7 @@ function NotificationItem({
 
 function notificationTypeLabel(type: NotificationSummary["type"]) {
   if (type === "event_reminder") return "Agenda";
+  if (type === "new_event") return "Evento";
   if (type === "post_comment") return "Comentário";
   if (type === "group_activity") return "Grupo";
   if (type === "reward") return "Recompensa";
@@ -269,6 +270,11 @@ function openNotification(
 
   if (notification.targetType === "group") {
     navigate({ to: "/groups/$groupId", params: { groupId: notification.targetId } });
+    return;
+  }
+
+  if (notification.targetType === "post") {
+    navigate({ to: "/discover" });
     return;
   }
 

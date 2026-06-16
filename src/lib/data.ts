@@ -123,7 +123,13 @@ export interface AgendaReminderSummary {
 
 export interface NotificationSummary {
   id: string;
-  type: "venue_update" | "event_reminder" | "post_comment" | "group_activity" | "reward";
+  type:
+    | "venue_update"
+    | "new_event"
+    | "event_reminder"
+    | "post_comment"
+    | "group_activity"
+    | "reward";
   title: string;
   body: string;
   targetType: "venue" | "event" | "post" | "group" | "profile";
@@ -1231,6 +1237,31 @@ async function claimRewardForAction(
   `;
   const row = rows[0];
   if (!row?.id) return null;
+
+  // Notifica quem desbloqueou a recompensa. unique_key pela redemption garante
+  // que não há duplicatas em check-ins repetidos. Rota para o evento ou o local.
+  const redemptionId = String(row.id);
+  const rewardRoute = eventId ? `/events/${eventId}` : `/venues/${input.venueId}`;
+  await ensureNotificationsSchema(sql);
+  await sql`
+    INSERT INTO public.notifications (
+      user_id, unique_key, type, title, body, target_type, target_id, route, created_at
+    )
+    SELECT
+      ${input.userId},
+      ${`reward:${redemptionId}`},
+      'reward',
+      'Recompensa liberada',
+      'Você desbloqueou: ' || vr.title,
+      ${eventId ? "event" : "venue"},
+      ${eventId ?? input.venueId},
+      ${rewardRoute},
+      now()
+    FROM public.venue_rewards vr
+    WHERE vr.id = ${rewardId}
+    ON CONFLICT (user_id, unique_key) DO NOTHING
+  `;
+
   return mapRedemption(row, "");
 }
 
@@ -2299,6 +2330,31 @@ export const addPostComment = createServerFn({ method: "POST" })
       FROM public.user_profiles
       WHERE user_id = ${userId}
       LIMIT 1
+    `;
+    const commenterName = String(authorRows[0]?.author_name ?? "Alguém");
+    const commentId = String(rows[0].id);
+
+    // Notifica o autor do post (se não for o próprio comentarista). Sem tela de
+    // detalhe de post, a rota aponta para o feed.
+    await ensureNotificationsSchema(sql);
+    await sql`
+      INSERT INTO public.notifications (
+        user_id, unique_key, type, title, body, target_type, target_id, route, created_at
+      )
+      SELECT
+        p.user_id,
+        ${`post_comment:${commentId}`},
+        'post_comment',
+        ${`${commenterName} comentou no seu post`},
+        ${body.slice(0, 140)},
+        'post',
+        p.id::text,
+        '/discover',
+        now()
+      FROM public.user_posts p
+      WHERE p.id = ${data.postId}
+        AND p.user_id <> ${userId}
+      ON CONFLICT (user_id, unique_key) DO NOTHING
     `;
 
     return mapPostComment({
@@ -3390,9 +3446,45 @@ export const createEventForOwner = createServerFn({ method: "POST" })
       RETURNING id
     `;
 
+    const eventId = String(rows[0].id);
+
+    // Notifica os seguidores do estabelecimento sobre o novo evento, espelhando
+    // o fluxo de createVenueUpdate. O dispatch (pg_cron) empurra o push a partir daqui.
+    await ensureNotificationsSchema(sql);
+    await sql`
+      INSERT INTO public.notifications (
+        user_id,
+        unique_key,
+        type,
+        title,
+        body,
+        target_type,
+        target_id,
+        route,
+        image_url,
+        created_at
+      )
+      SELECT
+        vf.user_id,
+        ${`new_event:${eventId}`},
+        'new_event',
+        ${data.title.trim()},
+        'Novo evento em ' || v.name,
+        'event',
+        ${eventId},
+        ${`/events/${eventId}`},
+        ${data.imageUrl},
+        now()
+      FROM public.venue_followers vf
+      JOIN public.venues v ON v.id = vf.venue_id
+      WHERE vf.venue_id = ${String(venue.id)}
+        AND vf.user_id <> ${userId}
+      ON CONFLICT (user_id, unique_key) DO NOTHING
+    `;
+
     // Retorno leve de propósito: o cliente que cria o evento ignora o payload,
     // então evitamos a agregação cara de getEventById no caminho crítico.
-    return { id: String(rows[0].id) };
+    return { id: eventId };
   });
 
 export const updateEventForOwner = createServerFn({ method: "POST" })
