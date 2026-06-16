@@ -45,6 +45,12 @@ docs
 migrations
 DEPLOY.md
 supabase/*
+!supabase/
+!supabase/migrations/
+supabase/migrations/*
+!supabase/migrations/20260616133000_include_new_event_notification_type.sql
+!supabase/migrations/20260616134000_authorize_push_dispatch_cron.sql
+supabase/.temp/
 supabase/functions
 ANDROID.md
 erro.txt
