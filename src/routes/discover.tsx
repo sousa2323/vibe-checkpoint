@@ -15,6 +15,7 @@ import {
   type FeedPostSummary,
   getCheckedInEventIds,
   getEventDetails,
+  getEvents,
   getFeedPosts,
   getSavedEventIds,
   reverseLocationLabel,
@@ -135,6 +136,7 @@ function Discover() {
   const user = data?.user;
   const loadCheckedInIds = useServerFn(getCheckedInEventIds);
   const loadEvent = useServerFn(getEventDetails);
+  const loadEvents = useServerFn(getEvents);
   const loadSavedIds = useServerFn(getSavedEventIds);
   const loadPosts = useServerFn(getFeedPosts);
   const reverseLocation = useServerFn(reverseLocationLabel);
@@ -183,6 +185,14 @@ function Discover() {
       .then(setPosts)
       .catch(() => undefined);
   }, [loadPosts, user?.id]);
+
+  // Igual aos posts: re-busca eventos a cada montagem para que eventos recém
+  // publicados por estabelecimentos apareçam no feed sem recarregar o app.
+  useEffect(() => {
+    loadEvents()
+      .then(setEvents)
+      .catch(() => undefined);
+  }, [loadEvents]);
 
   useEffect(() => {
     function syncRadiusPreference() {

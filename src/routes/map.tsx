@@ -8,7 +8,7 @@ import {
   Search,
   SlidersHorizontal,
 } from "lucide-react";
-import { type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { authClient } from "@/auth";
 import { ExplorerPreferencesForm } from "@/components/explorer-preferences-form";
 import { FeedActionNav } from "@/components/feed-action-nav";
@@ -83,7 +83,6 @@ function MapView() {
   const [preferences, setPreferences] = useState<ExplorerPreferences>(DEFAULT_EXPLORER_PREFERENCES);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSaving, setPreferencesSaving] = useState(false);
-  const filterTouchStartY = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -265,16 +264,6 @@ function MapView() {
     }
   }
 
-  function handleFilterTouchEnd(event: TouchEvent<HTMLDivElement>) {
-    const startY = filterTouchStartY.current;
-    filterTouchStartY.current = null;
-    if (startY == null) return;
-
-    const deltaY = event.changedTouches[0]?.clientY - startY;
-    if (deltaY > 36) setFiltersOpen(true);
-    if (deltaY < -36) setFiltersOpen(false);
-  }
-
   function handleSaveRadius() {
     const nextRadius = clampRadiusKm(radiusKm);
     saveRadiusKm(nextRadius);
@@ -323,13 +312,7 @@ function MapView() {
       </header>
 
       <section className="mt-5 px-6">
-        <div
-          className="rounded-3xl border border-border p-3"
-          onTouchStart={(event) => {
-            filterTouchStartY.current = event.touches[0]?.clientY ?? null;
-          }}
-          onTouchEnd={handleFilterTouchEnd}
-        >
+        <div className="rounded-3xl border border-border p-3">
           <div className="flex gap-2">
             <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-full bg-muted px-4">
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -495,7 +478,7 @@ function MapView() {
                   )}
                 >
                   <div className="overflow-hidden">
-                    <div className="mt-4 border-t border-border pt-4">
+                    <div className="mt-4 max-h-[55vh] touch-pan-y overflow-y-auto overscroll-contain border-t border-border pt-4">
                       <ExplorerPreferencesForm
                         value={preferences}
                         options={preferenceOptions}

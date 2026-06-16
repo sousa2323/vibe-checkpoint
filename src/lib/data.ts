@@ -3390,7 +3390,9 @@ export const createEventForOwner = createServerFn({ method: "POST" })
       RETURNING id
     `;
 
-    return getEventById(sql, String(rows[0].id));
+    // Retorno leve de propósito: o cliente que cria o evento ignora o payload,
+    // então evitamos a agregação cara de getEventById no caminho crítico.
+    return { id: String(rows[0].id) };
   });
 
 export const updateEventForOwner = createServerFn({ method: "POST" })
