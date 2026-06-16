@@ -9,7 +9,6 @@ import {
   Copy,
   Download,
   ExternalLink,
-  FileText,
   LoaderCircle,
   LogOut,
   MapPinOff,
@@ -38,7 +37,6 @@ import { ExplorerPreferencesForm } from "@/components/explorer-preferences-form"
 import { FeedActionNav } from "@/components/feed-action-nav";
 import { OwnerNav } from "@/components/owner-nav";
 import { PillButton } from "@/components/pill-button";
-import { SwipeCollapseCard } from "@/components/swipe-collapse-card";
 import { UserAvatar } from "@/components/user-avatar";
 import { getInitials } from "@/lib/avatar";
 import { getAdminAccess } from "@/lib/admin-actions";
@@ -697,54 +695,6 @@ function Profile() {
           />
         </div>
 
-        <SwipeCollapseCard
-          title="Privacidade e LGPD"
-          description="Seu nome, foto, avaliações, posts, check-ins e dados de estabelecimento podem aparecer publicamente quando você publicar ou interagir no app."
-          icon={<ShieldCheck className="h-5 w-5" />}
-          defaultOpen={false}
-          className="bg-muted/40"
-        >
-          <div className="mt-4 space-y-3">
-            <Row
-              icon={<Download className="h-4 w-4" />}
-              label={privacyAction === "exporting" ? "Gerando exportação..." : "Baixar meus dados"}
-              helper="Gera um arquivo JSON com dados básicos da conta e atividades."
-              disabled={privacyAction !== "idle"}
-              onClick={() => void downloadMyData()}
-            />
-            <Row
-              icon={<FileText className="h-4 w-4" />}
-              label="Política de Privacidade"
-              helper="Veja como seus dados são tratados."
-              disabled={privacyAction !== "idle"}
-              onClick={() => navigate({ to: "/privacy" })}
-            />
-            <Row
-              icon={<FileText className="h-4 w-4" />}
-              label="Termos de Uso"
-              helper="Regras de uso do ChegaAí."
-              disabled={privacyAction !== "idle"}
-              onClick={() => navigate({ to: "/terms" })}
-            />
-            <Row
-              icon={<Trash2 className="h-4 w-4" />}
-              label={
-                privacyAction === "requestingDeletion"
-                  ? "Registrando solicitação..."
-                  : "Solicitar exclusão da conta"
-              }
-              helper="Abre um pedido LGPD para revisão e exclusão/anonimização dos dados."
-              disabled={privacyAction !== "idle"}
-              danger
-              onClick={() => setDeletionDialogOpen(true)}
-            />
-          </div>
-          <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-            A exclusão definitiva ainda passa por revisão para preservar dados exigidos por lei,
-            segurança e conteúdo público que precise ser anonimizado.
-          </p>
-        </SwipeCollapseCard>
-
         <div className="space-y-3">
           <SectionLabel title="Conta" />
           {hasAdminAccess ? (
@@ -756,11 +706,52 @@ function Profile() {
             />
           ) : null}
           <Row
+            icon={<Download className="h-4 w-4" />}
+            label={privacyAction === "exporting" ? "Gerando exportação..." : "Baixar meus dados"}
+            helper="Gera um arquivo JSON com dados básicos da conta e atividades."
+            disabled={privacyAction !== "idle"}
+            onClick={() => void downloadMyData()}
+          />
+          <Row
             icon={<LogOut className="h-4 w-4" />}
             label="Sair"
             helper="Voltar para a tela de entrada."
             onClick={() => void signOut()}
           />
+          <Row
+            icon={<Trash2 className="h-4 w-4" />}
+            label={
+              privacyAction === "requestingDeletion"
+                ? "Registrando solicitação..."
+                : "Solicitar exclusão da conta"
+            }
+            helper="Abre um pedido LGPD para revisão e exclusão/anonimização dos dados."
+            disabled={privacyAction !== "idle"}
+            danger
+            onClick={() => setDeletionDialogOpen(true)}
+          />
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            A exclusão definitiva ainda passa por revisão para preservar dados exigidos por lei,
+            segurança e conteúdo público que precise ser anonimizado.
+          </p>
+        </div>
+
+        <div className="pt-1 text-center text-xs text-muted-foreground">
+          <button
+            type="button"
+            className="underline-offset-4 hover:underline"
+            onClick={() => navigate({ to: "/privacy" })}
+          >
+            Política de Privacidade
+          </button>
+          <span className="px-1.5">·</span>
+          <button
+            type="button"
+            className="underline-offset-4 hover:underline"
+            onClick={() => navigate({ to: "/terms" })}
+          >
+            Termos de Uso
+          </button>
         </div>
       </div>
 
