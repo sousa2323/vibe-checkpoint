@@ -2108,7 +2108,15 @@ export const getPostComposerEvents = createServerFn({ method: "GET" })
         AND e.status = 'published'
         AND occurrence.starts_at <= now()
         AND occurrence.starts_at >= now() - ${eventPostWindowInterval}::interval
-        AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
+        AND (
+          e.recurrence_type <> 'weekly'
+          OR (
+            c.occurrence_starts_at IS NOT NULL
+            AND c.occurrence_starts_at >= occurrence.starts_at - interval '1 minute'
+            AND c.occurrence_starts_at < occurrence.starts_at + interval '1 minute'
+          )
+          OR c.created_at >= now() - ${eventPostWindowInterval}::interval
+        )
       ORDER BY e.title ASC
     `;
 
@@ -2170,7 +2178,15 @@ export const createUserPost = createServerFn({ method: "POST" })
         AND e.status = 'published'
         AND occurrence.starts_at <= now()
         AND occurrence.starts_at >= now() - ${eventPostWindowInterval}::interval
-        AND (e.recurrence_type <> 'weekly' OR c.occurrence_starts_at = occurrence.starts_at)
+        AND (
+          e.recurrence_type <> 'weekly'
+          OR (
+            c.occurrence_starts_at IS NOT NULL
+            AND c.occurrence_starts_at >= occurrence.starts_at - interval '1 minute'
+            AND c.occurrence_starts_at < occurrence.starts_at + interval '1 minute'
+          )
+          OR c.created_at >= now() - ${eventPostWindowInterval}::interval
+        )
       LIMIT 1
     `;
     const event = events[0];

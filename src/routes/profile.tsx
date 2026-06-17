@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import { Capacitor } from "@capacitor/core";
 import {
   AtSign,
   Bell,
@@ -1200,6 +1201,9 @@ const permissionItems: Array<{
 function DevicePermissionsSection() {
   const [statuses, setStatuses] = useState<DevicePermissionStatuses | null>(null);
   const [requesting, setRequesting] = useState<DevicePermissionKind | null>(null);
+  const visiblePermissionItems = Capacitor.isNativePlatform()
+    ? permissionItems
+    : permissionItems.filter((item) => item.kind !== "photos" && item.kind !== "notifications");
 
   useEffect(() => {
     let cancelled = false;
@@ -1242,7 +1246,7 @@ function DevicePermissionsSection() {
         </p>
       </div>
       <div className="divide-y divide-border/60">
-        {permissionItems.map((item) => (
+        {visiblePermissionItems.map((item) => (
           <PermissionRow
             key={item.kind}
             {...item}
