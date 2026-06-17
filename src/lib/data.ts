@@ -1030,7 +1030,131 @@ async function ensureNotificationsSchema(sql: SqlClient) {
     ON public.push_tokens (user_id, last_seen_at DESC)
   `;
 
+  await ensureNotificationSecurityPolicies(sql);
+
   notificationsSchemaReady = true;
+}
+
+async function ensureNotificationSecurityPolicies(sql: SqlClient) {
+  await sql`
+    ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY
+  `;
+
+  await sql`
+    ALTER TABLE public.push_tokens ENABLE ROW LEVEL SECURITY
+  `;
+
+  await sql`
+    REVOKE ALL ON public.notifications FROM anon
+  `;
+
+  await sql`
+    REVOKE ALL ON public.push_tokens FROM anon
+  `;
+
+  await sql`
+    GRANT SELECT, UPDATE, DELETE ON public.notifications TO authenticated
+  `;
+
+  await sql`
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.push_tokens TO authenticated
+  `;
+
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'notifications'
+          AND policyname = 'Users can read own notifications'
+      ) THEN
+        CREATE POLICY "Users can read own notifications"
+          ON public.notifications FOR SELECT
+          TO authenticated
+          USING (user_id = auth.uid()::text);
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'notifications'
+          AND policyname = 'Users can update own notifications'
+      ) THEN
+        CREATE POLICY "Users can update own notifications"
+          ON public.notifications FOR UPDATE
+          TO authenticated
+          USING (user_id = auth.uid()::text)
+          WITH CHECK (user_id = auth.uid()::text);
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'notifications'
+          AND policyname = 'Users can delete own notifications'
+      ) THEN
+        CREATE POLICY "Users can delete own notifications"
+          ON public.notifications FOR DELETE
+          TO authenticated
+          USING (user_id = auth.uid()::text);
+      END IF;
+    END $$
+  `;
+
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'push_tokens'
+          AND policyname = 'Users can read own push tokens'
+      ) THEN
+        CREATE POLICY "Users can read own push tokens"
+          ON public.push_tokens FOR SELECT
+          TO authenticated
+          USING (user_id = auth.uid()::text);
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'push_tokens'
+          AND policyname = 'Users can insert own push tokens'
+      ) THEN
+        CREATE POLICY "Users can insert own push tokens"
+          ON public.push_tokens FOR INSERT
+          TO authenticated
+          WITH CHECK (user_id = auth.uid()::text);
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'push_tokens'
+          AND policyname = 'Users can update own push tokens'
+      ) THEN
+        CREATE POLICY "Users can update own push tokens"
+          ON public.push_tokens FOR UPDATE
+          TO authenticated
+          USING (user_id = auth.uid()::text)
+          WITH CHECK (user_id = auth.uid()::text);
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'push_tokens'
+          AND policyname = 'Users can delete own push tokens'
+      ) THEN
+        CREATE POLICY "Users can delete own push tokens"
+          ON public.push_tokens FOR DELETE
+          TO authenticated
+          USING (user_id = auth.uid()::text);
+      END IF;
+    END $$
+  `;
 }
 
 async function materializeDueEventReminderNotifications(sql: SqlClient, userId: string) {
@@ -1417,6 +1541,21 @@ async function ensureRewardRedemptionsSchema(sql: SqlClient) {
       );
     END;
     $fn$
+  `;
+
+  await sql`
+    REVOKE EXECUTE ON FUNCTION public.generate_redemption_code()
+    FROM public, anon, authenticated
+  `;
+
+  await sql`
+    REVOKE EXECUTE ON FUNCTION public.claim_reward_redemption(uuid, text, uuid)
+    FROM public, anon, authenticated
+  `;
+
+  await sql`
+    REVOKE EXECUTE ON FUNCTION public.redeem_reward_code(text, text)
+    FROM public, anon, authenticated
   `;
 
   rewardRedemptionsSchemaReady = true;

@@ -51,6 +51,9 @@ supabase/migrations/*
 !supabase/migrations/20260616133000_include_new_event_notification_type.sql
 !supabase/migrations/20260616134000_authorize_push_dispatch_cron.sql
 !supabase/migrations/20260617123000_add_user_post_mentions.sql
+!supabase/migrations/20260617130000_secure_notifications_push_tokens.sql
+!supabase/migrations/20260617131000_revoke_public_sensitive_function_execute.sql
+
 supabase/.temp/
 supabase/functions
 ANDROID.md
