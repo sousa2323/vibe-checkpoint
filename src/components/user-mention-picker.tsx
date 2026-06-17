@@ -34,11 +34,14 @@ export function UserMentionPicker({
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const query = normalizeMentionQuery(value);
+  const selectedUserLabel = selectedUser ? mentionLabel(selectedUser) : "";
+  const hasSelectedUserValue = Boolean(selectedUser && value === selectedUserLabel);
 
   useEffect(() => {
-    if (!currentUserId || query.length < 2) {
+    if (hasSelectedUserValue || !currentUserId || query.length < 2) {
       setResults([]);
       setLoading(false);
+      if (hasSelectedUserValue) setOpen(false);
       return;
     }
 
@@ -63,11 +66,11 @@ export function UserMentionPicker({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [currentUserId, query, searchUsers]);
+  }, [currentUserId, hasSelectedUserValue, query, searchUsers]);
 
   function handleValueChange(nextValue: string) {
     onValueChange(nextValue);
-    if (selectedUser && nextValue !== mentionLabel(selectedUser)) onSelectedUserChange(null);
+    if (selectedUser && nextValue !== selectedUserLabel) onSelectedUserChange(null);
     setOpen(true);
   }
 
@@ -92,7 +95,9 @@ export function UserMentionPicker({
         <input
           value={value}
           onChange={(event) => handleValueChange(event.target.value)}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            if (!hasSelectedUserValue) setOpen(true);
+          }}
           onBlur={() => window.setTimeout(() => setOpen(false), 120)}
           placeholder={placeholder}
           className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-muted-foreground"
@@ -100,7 +105,7 @@ export function UserMentionPicker({
         {loading ? <LoaderCircle className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
       </div>
 
-      {open && query.length >= 2 ? (
+      {open && !hasSelectedUserValue && query.length >= 2 ? (
         <div className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
           {results.length > 0 ? (
             <div className="max-h-72 overflow-y-auto py-2">
