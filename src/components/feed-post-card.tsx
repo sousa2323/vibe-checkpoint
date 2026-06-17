@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
-import { Heart, MessageCircle, MapPin, MoreHorizontal, Sparkles } from "lucide-react";
+import { Heart, MessageCircle, MapPin, MoreHorizontal, Sparkles, UserRound } from "lucide-react";
 import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { UserAvatar } from "@/components/user-avatar";
 import type { FeedPostSummary } from "@/lib/data";
 import { cn } from "@/lib/utils";
@@ -59,7 +60,7 @@ export function FeedPostCard({ post, onLike, onOpenComments, onOpenActions }: Fe
 
       {photoUrls.length > 0 ? (
         <Carousel
-          className="mx-3 overflow-hidden rounded-[1.5rem]"
+          className="relative mx-3 overflow-hidden rounded-[1.5rem]"
           opts={{ loop: photoUrls.length > 1 }}
         >
           <CarouselContent className="-ml-0">
@@ -80,6 +81,7 @@ export function FeedPostCard({ post, onLike, onOpenComments, onOpenActions }: Fe
               ))}
             </div>
           ) : null}
+          {post.taggedPerson ? <TaggedPersonBadge taggedPerson={post.taggedPerson} /> : null}
         </Carousel>
       ) : null}
 
@@ -126,12 +128,33 @@ export function FeedPostCard({ post, onLike, onOpenComments, onOpenActions }: Fe
               : "Comentar"}
           </button>
         </div>
-
-        {post.taggedPerson ? (
-          <p className="text-xs font-bold text-muted-foreground">Com {post.taggedPerson}</p>
-        ) : null}
       </div>
     </article>
+  );
+}
+
+function TaggedPersonBadge({ taggedPerson }: { taggedPerson: string }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Ver pessoa marcada: ${taggedPerson}`}
+          className="absolute bottom-3 left-3 flex h-8 w-8 items-center justify-center rounded-full border border-white/75 bg-black/55 text-white shadow-lg backdrop-blur transition active:scale-95"
+        >
+          <UserRound className="h-4.5 w-4.5" strokeWidth={2.4} />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        className="w-auto rounded-2xl border-white/10 bg-zinc-950 px-3 py-2 text-white shadow-2xl"
+      >
+        <p className="text-sm font-extrabold">{taggedPerson}</p>
+        <p className="text-xs font-medium text-white/65">Pessoa marcada</p>
+      </PopoverContent>
+    </Popover>
   );
 }
 
