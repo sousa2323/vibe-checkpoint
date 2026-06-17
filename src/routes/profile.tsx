@@ -828,7 +828,7 @@ function Profile() {
                 <a
                   href={exportViewUrl}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="flex h-11 items-center justify-center gap-2 rounded-full bg-muted px-3 text-sm font-black text-foreground transition-opacity active:opacity-80"
                 >
                   <ExternalLink className="h-4 w-4" />

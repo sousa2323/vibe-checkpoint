@@ -28,7 +28,18 @@ function formatLogData(data: unknown) {
 
 function routeFromData(data: unknown): string | undefined {
   const route = (data as { route?: unknown } | null | undefined)?.route;
-  return typeof route === "string" && route.startsWith("/") ? route : undefined;
+  if (typeof route !== "string") return undefined;
+
+  const normalized = route.trim();
+  if (!normalized.startsWith("/") || normalized.includes("//") || normalized.includes("\\")) {
+    return undefined;
+  }
+
+  if (["/", "/discover", "/updates", "/calendar", "/profile", "/map"].includes(normalized)) {
+    return normalized;
+  }
+
+  return /^\/(events|venues|groups)\/[a-zA-Z0-9_-]+$/.test(normalized) ? normalized : undefined;
 }
 
 let registeredUserId: string | undefined;

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql, uniqueSlug } from "./db";
+import { assertAllowedPublicMediaUrl } from "./media";
 import { getOptionalAuthenticatedUserId, requireAuthenticatedUserId } from "./server-auth";
 import { fetchWithTimeout, timeoutMessage } from "./timeout";
 
@@ -259,6 +260,9 @@ export const updateExplorerProfile = createServerFn({ method: "POST" })
     const username = normalizeUsername(data.username);
     validateUsername(username);
     await ensureUsernameAvailable(username, userId);
+    const avatarUrl = data.avatarUrl?.trim()
+      ? assertAllowedPublicMediaUrl(data.avatarUrl.trim())
+      : undefined;
 
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
@@ -278,7 +282,7 @@ export const updateExplorerProfile = createServerFn({ method: "POST" })
         'explorer',
         ${displayName},
         ${username},
-        ${data.avatarUrl ?? null},
+        ${avatarUrl ?? null},
         true
       )
       ON CONFLICT (user_id) DO UPDATE SET
@@ -502,6 +506,7 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
     if (!data.venueName.trim() || !data.businessRole.trim() || !data.coverImageUrl) {
       throw new Error("Informe nome, função e imagem do estabelecimento.");
     }
+    const coverImageUrl = assertAllowedPublicMediaUrl(data.coverImageUrl.trim());
 
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
@@ -558,7 +563,7 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
           capacity = ${data.capacity || null},
           latitude = COALESCE(${coordinates?.latitude ?? null}, latitude),
           longitude = COALESCE(${coordinates?.longitude ?? null}, longitude),
-          cover_image_url = ${data.coverImageUrl},
+          cover_image_url = ${coverImageUrl},
           updated_at = now()
         WHERE id = ${String(existing[0].id)}
         RETURNING id, name, neighborhood, city, state, address, description, cover_image_url
@@ -613,7 +618,7 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
         ${data.capacity || null},
         ${coordinates?.latitude ?? null},
         ${coordinates?.longitude ?? null},
-        ${data.coverImageUrl}
+        ${coverImageUrl}
       )
       RETURNING id, name, neighborhood, city, state, address, description, cover_image_url
     `;

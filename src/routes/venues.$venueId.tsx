@@ -199,7 +199,7 @@ function VenueDetailPage() {
             <a
               href={instagramUrl(venue.instagram)}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               aria-label={`Abrir Instagram de ${venue.name}`}
               className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-foreground transition-colors hover:bg-primary hover:text-white"
             >

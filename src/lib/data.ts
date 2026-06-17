@@ -6,6 +6,7 @@ import {
   getWeeklyRecurrenceParts,
   type EventRecurrenceType,
 } from "./event-time";
+import { assertAllowedPublicMediaUrl } from "./media";
 import { getOptionalAuthenticatedUserId, requireAuthenticatedUserId } from "./server-auth";
 import { fetchWithTimeout, timeoutMessage } from "./timeout";
 
@@ -2399,7 +2400,8 @@ export const createUserPost = createServerFn({ method: "POST" })
     const photoUrls = data.photoUrls
       .map((url) => url.trim())
       .filter(Boolean)
-      .slice(0, 3);
+      .slice(0, 3)
+      .map(assertAllowedPublicMediaUrl);
     if (!caption && photoUrls.length === 0) {
       throw new Error("Escreva uma legenda ou adicione pelo menos uma foto.");
     }
@@ -2543,7 +2545,8 @@ export const updateUserPost = createServerFn({ method: "POST" })
     const nextPhotoUrls = data.photoUrls
       ?.map((url) => url.trim())
       .filter(Boolean)
-      .slice(0, 3);
+      .slice(0, 3)
+      .map(assertAllowedPublicMediaUrl);
     const taggedPerson = data.taggedPerson?.trim();
     const taggedUserId = data.taggedUserId?.trim();
 
@@ -2694,7 +2697,9 @@ async function ensurePostAuthorProfile(
   authorAvatarUrl?: string,
 ) {
   const displayName = authorName?.trim();
-  const avatarUrl = authorAvatarUrl?.trim();
+  const avatarUrl = authorAvatarUrl?.trim()
+    ? assertAllowedPublicMediaUrl(authorAvatarUrl.trim())
+    : undefined;
   if (!displayName && !avatarUrl) return;
 
   await sql`
@@ -3976,6 +3981,7 @@ export const createEventForOwner = createServerFn({ method: "POST" })
     if (!data.title.trim() || !data.category.trim() || !data.startsAt || !data.imageUrl) {
       throw new Error("Preencha título, categoria, data e imagem.");
     }
+    const imageUrl = assertAllowedPublicMediaUrl(data.imageUrl.trim());
 
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
@@ -4017,7 +4023,7 @@ export const createEventForOwner = createServerFn({ method: "POST" })
         ${data.description?.trim() || null},
         ${data.startsAt},
         ${data.priceCents ?? null},
-        ${data.imageUrl},
+        ${imageUrl},
         ${recurrence.recurrenceType},
         ${recurrence.recurrenceWeekday},
         ${recurrence.recurrenceTime},
@@ -4053,7 +4059,7 @@ export const createEventForOwner = createServerFn({ method: "POST" })
         'event',
         ${eventId},
         ${`/events/${eventId}`},
-        ${data.imageUrl},
+        ${imageUrl},
         now()
       FROM public.venue_followers vf
       JOIN public.venues v ON v.id = vf.venue_id
@@ -4075,6 +4081,9 @@ export const updateEventForOwner = createServerFn({ method: "POST" })
     if (!data.title.trim() || !data.category.trim() || !data.startsAt) {
       throw new Error("Preencha título, categoria e data do evento.");
     }
+    const imageUrl = data.imageUrl?.trim()
+      ? assertAllowedPublicMediaUrl(data.imageUrl.trim())
+      : undefined;
 
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
@@ -4100,7 +4109,7 @@ export const updateEventForOwner = createServerFn({ method: "POST" })
         description = ${data.description?.trim() || null},
         starts_at = ${data.startsAt},
         price_cents = ${data.priceCents ?? null},
-        image_url = COALESCE(${data.imageUrl ?? null}, image_url),
+        image_url = COALESCE(${imageUrl ?? null}, image_url),
         recurrence_type = ${recurrence.recurrenceType},
         recurrence_weekday = ${recurrence.recurrenceWeekday},
         recurrence_time = ${recurrence.recurrenceTime},
