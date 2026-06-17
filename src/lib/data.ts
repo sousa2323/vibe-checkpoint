@@ -182,6 +182,7 @@ export interface FeedPostSummary {
   caption: string;
   taggedPerson?: string;
   taggedUserId?: string;
+  taggedUsers?: UserMentionSummary[];
   photoUrls: string[];
   likes: number;
   comments: number;
@@ -389,6 +390,7 @@ type CreateUserPostInput = {
   photoUrls: string[];
   taggedPerson?: string;
   taggedUserId?: string;
+  taggedUsers?: UserMentionSummary[];
 };
 
 type PostActionInput = {
@@ -400,6 +402,7 @@ type UpdateUserPostInput = PostActionInput & {
   caption: string;
   taggedPerson?: string;
   taggedUserId?: string;
+  taggedUsers?: UserMentionSummary[];
 };
 
 type AddPostCommentInput = PostActionInput & {
@@ -587,7 +590,54 @@ function safeJsonParse(value: string) {
   }
 }
 
+function mapTaggedUsers(value: unknown): UserMentionSummary[] {
+  const parsed = typeof value === "string" ? safeJsonParse(value) : value;
+  if (!Array.isArray(parsed)) return [];
+
+  const users: UserMentionSummary[] = [];
+
+  for (const item of parsed) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const userId = row.userId ?? row.user_id;
+    if (!userId) continue;
+    users.push({
+      userId: String(userId),
+      username: row.username ? String(row.username) : undefined,
+      displayName: row.displayName
+        ? String(row.displayName)
+        : row.display_name
+          ? String(row.display_name)
+          : row.displayLabel
+            ? String(row.displayLabel)
+            : row.display_label
+              ? String(row.display_label)
+              : undefined,
+      avatarUrl: row.avatarUrl
+        ? String(row.avatarUrl)
+        : row.avatar_url
+          ? String(row.avatar_url)
+          : undefined,
+    });
+  }
+
+  return users;
+}
+
 function mapFeedPost(row: Record<string, unknown>, liked = false): FeedPostSummary {
+  const taggedUsers = mapTaggedUsers(row.tagged_users);
+  const legacyTaggedUser =
+    taggedUsers.length === 0 && row.tagged_user_id
+      ? [
+          {
+            userId: String(row.tagged_user_id),
+            username: row.tagged_person ? String(row.tagged_person).replace(/^@/, "") : undefined,
+            displayName: row.tagged_person ? String(row.tagged_person) : undefined,
+          },
+        ]
+      : [];
+  const resolvedTaggedUsers = taggedUsers.length > 0 ? taggedUsers : legacyTaggedUser;
+
   return {
     id: String(row.id),
     userId: String(row.user_id),
@@ -604,6 +654,7 @@ function mapFeedPost(row: Record<string, unknown>, liked = false): FeedPostSumma
     caption: String(row.caption ?? ""),
     taggedPerson: row.tagged_person ? String(row.tagged_person) : undefined,
     taggedUserId: row.tagged_user_id ? String(row.tagged_user_id) : undefined,
+    taggedUsers: resolvedTaggedUsers,
     photoUrls: Array.isArray(row.photo_urls) ? row.photo_urls.map(String) : [],
     likes: Number(row.likes ?? 0),
     comments: Number(row.comments ?? 0),
@@ -636,6 +687,21 @@ function mentionDisplayName(user: UserMentionSummary) {
   return user.username ? `@${user.username}` : (user.displayName ?? "").trim();
 }
 
+function normalizeTaggedUserInput(users?: UserMentionSummary[]) {
+  const seen = new Set<string>();
+  const normalized: UserMentionSummary[] = [];
+
+  for (const user of users ?? []) {
+    const userId = user.userId?.trim();
+    if (!userId || seen.has(userId)) continue;
+    seen.add(userId);
+    normalized.push({ userId });
+    if (normalized.length >= 10) break;
+  }
+
+  return normalized;
+}
+
 async function getMentionedUser(
   sql: SqlClient,
   taggedUserId: string | undefined,
@@ -653,6 +719,33 @@ async function getMentionedUser(
   `;
 
   return rows[0] ? mapUserMention(rows[0]) : null;
+}
+
+async function getMentionedUsers(
+  sql: SqlClient,
+  taggedUsers: UserMentionSummary[] | undefined,
+  fallbackTaggedUserId: string | undefined,
+  authorUserId: string,
+) {
+  const requestedUsers = normalizeTaggedUserInput(
+    taggedUsers?.length
+      ? taggedUsers
+      : fallbackTaggedUserId
+        ? [{ userId: fallbackTaggedUserId }]
+        : [],
+  ).filter((user) => user.userId !== authorUserId);
+  if (requestedUsers.length === 0) return [];
+
+  const userIds = requestedUsers.map((user) => user.userId);
+  const rows = await sql`
+    SELECT user_id, username, display_name, avatar_url
+    FROM public.user_profiles
+    WHERE user_id = ANY(${userIds})
+      AND account_type = 'explorer'
+  `;
+
+  const usersById = new Map(rows.map((row) => [String(row.user_id), mapUserMention(row)]));
+  return userIds.map((userId) => usersById.get(userId)).filter(Boolean) as UserMentionSummary[];
 }
 
 function mapAgendaReminder(row: Record<string, unknown>): AgendaReminderSummary {
@@ -1016,6 +1109,45 @@ async function ensurePostsSchema(sql: SqlClient) {
     CREATE INDEX IF NOT EXISTS user_posts_tagged_user_created_idx
     ON public.user_posts (tagged_user_id, created_at DESC)
     WHERE tagged_user_id IS NOT NULL
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.user_post_mentions (
+      post_id uuid NOT NULL REFERENCES public.user_posts(id) ON DELETE CASCADE,
+      user_id text NOT NULL,
+      display_label text NOT NULL,
+      position integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (post_id, user_id),
+      CONSTRAINT user_post_mentions_position_check CHECK (position >= 0 AND position < 10)
+    )
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS user_post_mentions_post_position_idx
+    ON public.user_post_mentions (post_id, position)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS user_post_mentions_user_created_idx
+    ON public.user_post_mentions (user_id, created_at DESC)
+  `;
+
+  await sql`
+    ALTER TABLE public.user_post_mentions ENABLE ROW LEVEL SECURITY
+  `;
+
+  await sql`
+    INSERT INTO public.user_post_mentions (post_id, user_id, display_label, position)
+    SELECT
+      p.id,
+      p.tagged_user_id,
+      COALESCE(p.tagged_person, '@' || up.username, up.display_name, 'Pessoa marcada'),
+      0
+    FROM public.user_posts p
+    LEFT JOIN public.user_profiles up ON up.user_id = p.tagged_user_id
+    WHERE p.tagged_user_id IS NOT NULL
+    ON CONFLICT (post_id, user_id) DO NOTHING
   `;
 
   postsSchemaReady = true;
@@ -2111,6 +2243,17 @@ export const getFeedPosts = createServerFn({ method: "GET" })
         p.caption,
         p.tagged_person,
         p.tagged_user_id,
+        COALESCE((
+          SELECT json_agg(json_build_object(
+            'userId', upm.user_id,
+            'username', mention_profile.username,
+            'displayName', COALESCE(mention_profile.display_name, upm.display_label),
+            'avatarUrl', mention_profile.avatar_url
+          ) ORDER BY upm.position)
+          FROM public.user_post_mentions upm
+          LEFT JOIN public.user_profiles mention_profile ON mention_profile.user_id = upm.user_id
+          WHERE upm.post_id = p.id
+        ), '[]'::json) AS tagged_users,
         p.created_at,
         v.name AS venue_name,
         v.neighborhood,
@@ -2265,9 +2408,12 @@ export const createUserPost = createServerFn({ method: "POST" })
     await ensurePostsSchema(sql);
     await ensureEventsRecurrenceSchema(sql);
     await ensurePostAuthorProfile(sql, userId, data.authorName, data.authorAvatarUrl);
-    const mentionedUser = await getMentionedUser(sql, taggedUserId, userId);
-    const storedTaggedUserId = mentionedUser?.userId;
-    const storedTaggedPerson = mentionedUser ? mentionDisplayName(mentionedUser) : taggedPerson;
+    const mentionedUsers = await getMentionedUsers(sql, data.taggedUsers, taggedUserId, userId);
+    const firstMentionedUser = mentionedUsers[0];
+    const storedTaggedUserId = firstMentionedUser?.userId;
+    const storedTaggedPerson = firstMentionedUser
+      ? mentionDisplayName(firstMentionedUser)
+      : taggedPerson;
 
     const events = await sql`
       SELECT e.id, e.venue_id
@@ -2326,10 +2472,11 @@ export const createUserPost = createServerFn({ method: "POST" })
     `;
     const postId = String(posts[0].id);
 
-    await notifyTaggedUser(sql, {
+    await syncPostMentions(sql, postId, mentionedUsers);
+    await notifyTaggedUsers(sql, {
       postId,
       authorUserId: userId,
-      taggedUserId: storedTaggedUserId,
+      taggedUsers: mentionedUsers,
       authorName: data.authorName,
       caption,
     });
@@ -2352,6 +2499,17 @@ export const createUserPost = createServerFn({ method: "POST" })
         p.caption,
         p.tagged_person,
         p.tagged_user_id,
+        COALESCE((
+          SELECT json_agg(json_build_object(
+            'userId', upm.user_id,
+            'username', mention_profile.username,
+            'displayName', COALESCE(mention_profile.display_name, upm.display_label),
+            'avatarUrl', mention_profile.avatar_url
+          ) ORDER BY upm.position)
+          FROM public.user_post_mentions upm
+          LEFT JOIN public.user_profiles mention_profile ON mention_profile.user_id = upm.user_id
+          WHERE upm.post_id = p.id
+        ), '[]'::json) AS tagged_users,
         p.created_at,
         v.name AS venue_name,
         v.neighborhood,
@@ -2387,9 +2545,12 @@ export const updateUserPost = createServerFn({ method: "POST" })
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
     await ensurePostsSchema(sql);
-    const mentionedUser = await getMentionedUser(sql, taggedUserId, userId);
-    const storedTaggedUserId = mentionedUser?.userId;
-    const storedTaggedPerson = mentionedUser ? mentionDisplayName(mentionedUser) : taggedPerson;
+    const mentionedUsers = await getMentionedUsers(sql, data.taggedUsers, taggedUserId, userId);
+    const firstMentionedUser = mentionedUsers[0];
+    const storedTaggedUserId = firstMentionedUser?.userId;
+    const storedTaggedPerson = firstMentionedUser
+      ? mentionDisplayName(firstMentionedUser)
+      : taggedPerson;
 
     const existing = await sql`
       SELECT
@@ -2411,6 +2572,8 @@ export const updateUserPost = createServerFn({ method: "POST" })
       throw new Error("Escreva uma legenda ou mantenha uma foto no post.");
     }
 
+    const previousTaggedUserIds = await getPostMentionUserIds(sql, data.postId);
+
     await sql`
       UPDATE public.user_posts
       SET
@@ -2422,14 +2585,14 @@ export const updateUserPost = createServerFn({ method: "POST" })
         AND user_id = ${userId}
     `;
 
-    if (storedTaggedUserId && storedTaggedUserId !== String(post.tagged_user_id ?? "")) {
-      await notifyTaggedUser(sql, {
-        postId: data.postId,
-        authorUserId: userId,
-        taggedUserId: storedTaggedUserId,
-        caption,
-      });
-    }
+    await syncPostMentions(sql, data.postId, mentionedUsers);
+    await notifyTaggedUsers(sql, {
+      postId: data.postId,
+      authorUserId: userId,
+      taggedUsers: mentionedUsers,
+      previousTaggedUserIds,
+      caption,
+    });
 
     const rows = await sql`
       SELECT
@@ -2442,6 +2605,17 @@ export const updateUserPost = createServerFn({ method: "POST" })
         p.caption,
         p.tagged_person,
         p.tagged_user_id,
+        COALESCE((
+          SELECT json_agg(json_build_object(
+            'userId', upm.user_id,
+            'username', mention_profile.username,
+            'displayName', COALESCE(mention_profile.display_name, upm.display_label),
+            'avatarUrl', mention_profile.avatar_url
+          ) ORDER BY upm.position)
+          FROM public.user_post_mentions upm
+          LEFT JOIN public.user_profiles mention_profile ON mention_profile.user_id = upm.user_id
+          WHERE upm.post_id = p.id
+        ), '[]'::json) AS tagged_users,
         p.created_at,
         v.name AS venue_name,
         v.neighborhood,
@@ -2513,6 +2687,33 @@ async function ensurePostAuthorProfile(
   `;
 }
 
+async function getPostMentionUserIds(sql: SqlClient, postId: string) {
+  const rows = await sql`
+    SELECT user_id
+    FROM public.user_post_mentions
+    WHERE post_id = ${postId}
+  `;
+
+  return rows.map((row) => String(row.user_id));
+}
+
+async function syncPostMentions(sql: SqlClient, postId: string, users: UserMentionSummary[]) {
+  await sql`
+    DELETE FROM public.user_post_mentions
+    WHERE post_id = ${postId}
+  `;
+
+  for (const [position, user] of users.entries()) {
+    await sql`
+      INSERT INTO public.user_post_mentions (post_id, user_id, display_label, position)
+      VALUES (${postId}, ${user.userId}, ${mentionDisplayName(user)}, ${position})
+      ON CONFLICT (post_id, user_id) DO UPDATE SET
+        display_label = EXCLUDED.display_label,
+        position = EXCLUDED.position
+    `;
+  }
+}
+
 async function notifyTaggedUser(
   sql: SqlClient,
   {
@@ -2561,6 +2762,38 @@ async function notifyTaggedUser(
     )
     ON CONFLICT (user_id, unique_key) DO NOTHING
   `;
+}
+
+async function notifyTaggedUsers(
+  sql: SqlClient,
+  {
+    postId,
+    authorUserId,
+    taggedUsers,
+    previousTaggedUserIds = [],
+    authorName,
+    caption,
+  }: {
+    postId: string;
+    authorUserId: string;
+    taggedUsers: UserMentionSummary[];
+    previousTaggedUserIds?: string[];
+    authorName?: string;
+    caption: string;
+  },
+) {
+  const previous = new Set(previousTaggedUserIds);
+
+  for (const user of taggedUsers) {
+    if (previous.has(user.userId)) continue;
+    await notifyTaggedUser(sql, {
+      postId,
+      authorUserId,
+      taggedUserId: user.userId,
+      authorName,
+      caption,
+    });
+  }
 }
 
 export const togglePostLike = createServerFn({ method: "POST" })

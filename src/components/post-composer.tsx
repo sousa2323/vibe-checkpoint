@@ -25,7 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { UserMentionPicker } from "@/components/user-mention-picker";
+import { UserMentionMultiPicker } from "@/components/user-mention-picker";
 import type { FeedPostSummary, PostComposerEventOption, UserMentionSummary } from "@/lib/data";
 import { createUserPost, getPostComposerEvents } from "@/lib/data";
 import { uploadMedia } from "@/lib/media";
@@ -69,8 +69,7 @@ export function PostComposer({
   const [options, setOptions] = useState<PostComposerEventOption[]>([]);
   const [eventId, setEventId] = useState("");
   const [caption, setCaption] = useState("");
-  const [taggedPerson, setTaggedPerson] = useState("");
-  const [taggedUser, setTaggedUser] = useState<UserMentionSummary | null>(null);
+  const [taggedUsers, setTaggedUsers] = useState<UserMentionSummary[]>([]);
   const [photos, setPhotos] = useState<PreviewPhoto[]>([]);
   const [loading, setLoading] = useState(false);
   const selectedEvent = options.find((option) => option.id === eventId);
@@ -113,8 +112,7 @@ export function PostComposer({
     photos.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
     setPhotos([]);
     setCaption("");
-    setTaggedPerson("");
-    setTaggedUser(null);
+    setTaggedUsers([]);
     setEventId(options[0]?.id ?? "");
   }
 
@@ -243,8 +241,9 @@ export function PostComposer({
             eventId,
             caption,
             photoUrls,
-            taggedPerson,
-            taggedUserId: taggedUser?.userId,
+            taggedPerson: taggedUsers[0] ? mentionLabel(taggedUsers[0]) : undefined,
+            taggedUserId: taggedUsers[0]?.userId,
+            taggedUsers,
           },
         }),
         20000,
@@ -391,13 +390,11 @@ export function PostComposer({
                 />
               </label>
 
-              <UserMentionPicker
+              <UserMentionMultiPicker
                 currentUserId={userId}
                 label="Marcar pessoa opcional"
-                value={taggedPerson}
-                selectedUser={taggedUser}
-                onValueChange={setTaggedPerson}
-                onSelectedUserChange={setTaggedUser}
+                selectedUsers={taggedUsers}
+                onSelectedUsersChange={setTaggedUsers}
               />
             </>
           )}
@@ -449,6 +446,10 @@ function extensionFromMimeType(mimeType: string) {
   if (mimeType === "image/png") return "png";
   if (mimeType === "image/webp") return "webp";
   return "jpg";
+}
+
+function mentionLabel(user: UserMentionSummary) {
+  return user.username ? `@${user.username}` : (user.displayName ?? "");
 }
 
 async function optimizeImageForUpload(file: File) {

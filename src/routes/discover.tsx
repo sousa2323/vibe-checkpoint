@@ -10,7 +10,7 @@ import { FeedPostCard } from "@/components/feed-post-card";
 import { NativeFeedback } from "@/components/native-feedback";
 import { NotificationBellButton } from "@/components/notification-bell-button";
 import { PostComposer } from "@/components/post-composer";
-import { UserMentionPicker } from "@/components/user-mention-picker";
+import { UserMentionMultiPicker } from "@/components/user-mention-picker";
 import {
   type EventSummary,
   type FeedPostSummary,
@@ -172,8 +172,7 @@ function Discover() {
   const [actionsPost, setActionsPost] = useState<FeedPostSummary | null>(null);
   const [editingPost, setEditingPost] = useState<FeedPostSummary | null>(null);
   const [editCaption, setEditCaption] = useState("");
-  const [editTaggedPerson, setEditTaggedPerson] = useState("");
-  const [editTaggedUser, setEditTaggedUser] = useState<UserMentionSummary | null>(null);
+  const [editTaggedUsers, setEditTaggedUsers] = useState<UserMentionSummary[]>([]);
   const [postActionLoading, setPostActionLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
@@ -493,15 +492,7 @@ function Discover() {
     setActionsPost(null);
     setEditingPost(post);
     setEditCaption(post.caption);
-    setEditTaggedPerson(post.taggedPerson ?? "");
-    setEditTaggedUser(
-      post.taggedUserId
-        ? {
-            userId: post.taggedUserId,
-            username: post.taggedPerson?.replace(/^@/, "") || undefined,
-          }
-        : null,
-    );
+    setEditTaggedUsers(getPostTaggedUsers(post));
   }
 
   async function onDeletePost(post: FeedPostSummary) {
@@ -535,15 +526,16 @@ function Discover() {
           userId,
           postId: editingPost.id,
           caption: editCaption,
-          taggedPerson: editTaggedPerson,
-          taggedUserId: editTaggedUser?.userId,
+          taggedPerson: editTaggedUsers[0] ? mentionLabel(editTaggedUsers[0]) : undefined,
+          taggedUserId: editTaggedUsers[0]?.userId,
+          taggedUsers: editTaggedUsers,
         },
       });
       setPosts((current) =>
         current.map((post) => (post.id === updatedPost.id ? updatedPost : post)),
       );
       setEditingPost(null);
-      setEditTaggedUser(null);
+      setEditTaggedUsers([]);
       setStatus("Post atualizado.");
     } catch (cause) {
       setStatus(cause instanceof Error ? cause.message : "Não foi possível editar o post.");
@@ -754,7 +746,7 @@ function Discover() {
         onOpenChange={(open) => {
           if (!open && !postActionLoading) {
             setEditingPost(null);
-            setEditTaggedUser(null);
+            setEditTaggedUsers([]);
           }
         }}
       >
@@ -774,13 +766,11 @@ function Discover() {
                 placeholder="Escreva algo sobre esse rolê"
               />
             </label>
-            <UserMentionPicker
+            <UserMentionMultiPicker
               currentUserId={user?.id}
               label="Com quem?"
-              value={editTaggedPerson}
-              selectedUser={editTaggedUser}
-              onValueChange={setEditTaggedPerson}
-              onSelectedUserChange={setEditTaggedUser}
+              selectedUsers={editTaggedUsers}
+              onSelectedUsersChange={setEditTaggedUsers}
               placeholder="@amigo"
               inputClassName="rounded-2xl border border-border bg-transparent focus-within:ring-2 focus-within:ring-primary"
             />
@@ -790,7 +780,7 @@ function Discover() {
                 disabled={postActionLoading}
                 onClick={() => {
                   setEditingPost(null);
-                  setEditTaggedUser(null);
+                  setEditTaggedUsers([]);
                 }}
                 className="h-11 rounded-full border border-border text-sm font-bold transition hover:bg-muted disabled:opacity-60"
               >
@@ -865,6 +855,23 @@ function feedTime(item: { createdAt?: string; startsAt?: string }) {
   if (!value) return 0;
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? 0 : time;
+}
+
+function getPostTaggedUsers(post: FeedPostSummary): UserMentionSummary[] {
+  if (post.taggedUsers?.length) return post.taggedUsers;
+  if (!post.taggedUserId) return [];
+
+  return [
+    {
+      userId: post.taggedUserId,
+      username: post.taggedPerson?.replace(/^@/, "") || undefined,
+      displayName: post.taggedPerson,
+    },
+  ];
+}
+
+function mentionLabel(user: UserMentionSummary) {
+  return user.username ? `@${user.username}` : (user.displayName ?? "");
 }
 
 function isWithinRadius(

@@ -3,7 +3,7 @@ import { Heart, MessageCircle, MapPin, MoreHorizontal, Sparkles, UserRound } fro
 import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { UserAvatar } from "@/components/user-avatar";
-import type { FeedPostSummary } from "@/lib/data";
+import type { FeedPostSummary, UserMentionSummary } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
 type FeedPostCardProps = {
@@ -16,6 +16,7 @@ type FeedPostCardProps = {
 export function FeedPostCard({ post, onLike, onOpenComments, onOpenActions }: FeedPostCardProps) {
   const photoUrls = Array.from(new Set(post.photoUrls));
   const relativeTime = formatPostRelativeTime(post.createdAt);
+  const taggedUsers = getPostTaggedUsers(post);
 
   return (
     <article className="overflow-hidden rounded-[2rem] border border-border bg-card text-card-foreground shadow-[0_18px_50px_-30px_rgba(15,23,42,0.55)]">
@@ -81,7 +82,7 @@ export function FeedPostCard({ post, onLike, onOpenComments, onOpenActions }: Fe
               ))}
             </div>
           ) : null}
-          {post.taggedPerson ? <TaggedPersonBadge taggedPerson={post.taggedPerson} /> : null}
+          {taggedUsers.length > 0 ? <TaggedPeopleBadge taggedUsers={taggedUsers} /> : null}
         </Carousel>
       ) : null}
 
@@ -133,13 +134,15 @@ export function FeedPostCard({ post, onLike, onOpenComments, onOpenActions }: Fe
   );
 }
 
-function TaggedPersonBadge({ taggedPerson }: { taggedPerson: string }) {
+function TaggedPeopleBadge({ taggedUsers }: { taggedUsers: UserMentionSummary[] }) {
+  const label = taggedUsers.map(mentionLabel).join(", ");
+
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={`Ver pessoa marcada: ${taggedPerson}`}
+          aria-label={`Ver pessoas marcadas: ${label}`}
           className="absolute bottom-3 left-3 flex h-8 w-8 items-center justify-center rounded-full border border-white/75 bg-black/55 text-white shadow-lg backdrop-blur transition active:scale-95"
         >
           <UserRound className="h-4.5 w-4.5" strokeWidth={2.4} />
@@ -151,11 +154,33 @@ function TaggedPersonBadge({ taggedPerson }: { taggedPerson: string }) {
         sideOffset={8}
         className="w-auto rounded-2xl border-white/10 bg-zinc-950 px-3 py-2 text-white shadow-2xl"
       >
-        <p className="text-sm font-extrabold">{taggedPerson}</p>
-        <p className="text-xs font-medium text-white/65">Pessoa marcada</p>
+        <div className="space-y-1">
+          {taggedUsers.map((user) => (
+            <p key={user.userId} className="text-sm font-extrabold">
+              {mentionLabel(user)}
+            </p>
+          ))}
+        </div>
       </PopoverContent>
     </Popover>
   );
+}
+
+function getPostTaggedUsers(post: FeedPostSummary): UserMentionSummary[] {
+  if (post.taggedUsers?.length) return post.taggedUsers;
+  if (!post.taggedUserId) return [];
+
+  return [
+    {
+      userId: post.taggedUserId,
+      username: post.taggedPerson?.replace(/^@/, "") || undefined,
+      displayName: post.taggedPerson,
+    },
+  ];
+}
+
+function mentionLabel(user: UserMentionSummary) {
+  return user.username ? `@${user.username}` : (user.displayName ?? "");
 }
 
 function formatCount(value: number, singular: string, plural: string) {
