@@ -386,6 +386,11 @@ type PostActionInput = {
   postId: string;
 };
 
+type UpdateUserPostInput = PostActionInput & {
+  caption: string;
+  taggedPerson?: string;
+};
+
 type AddPostCommentInput = PostActionInput & {
   body: string;
 };
@@ -2248,6 +2253,107 @@ export const createUserPost = createServerFn({ method: "POST" })
     `;
 
     return mapFeedPost(rows[0]);
+  });
+
+export const updateUserPost = createServerFn({ method: "POST" })
+  .inputValidator((data: UpdateUserPostInput) => data)
+  .handler(async ({ data }): Promise<FeedPostSummary> => {
+    const userId = await requireAuthenticatedUserId(data.userId);
+    const caption = data.caption.trim();
+    const taggedPerson = data.taggedPerson?.trim();
+
+    const sql = await getSql();
+    if (!sql) throw new Error("DATABASE_URL não configurada.");
+    await ensurePostsSchema(sql);
+
+    const existing = await sql`
+      SELECT
+        p.id,
+        p.user_id,
+        COUNT(pm.id)::int AS photo_count
+      FROM public.user_posts p
+      LEFT JOIN public.user_post_media pm ON pm.post_id = p.id
+      WHERE p.id = ${data.postId}
+      GROUP BY p.id
+      LIMIT 1
+    `;
+    const post = existing[0];
+    if (!post) throw new Error("Post não encontrado.");
+    if (String(post.user_id) !== userId)
+      throw new Error("Você só pode editar seus próprios posts.");
+    if (!caption && Number(post.photo_count ?? 0) === 0) {
+      throw new Error("Escreva uma legenda ou mantenha uma foto no post.");
+    }
+
+    await sql`
+      UPDATE public.user_posts
+      SET
+        caption = ${caption},
+        tagged_person = ${taggedPerson || null},
+        updated_at = now()
+      WHERE id = ${data.postId}
+        AND user_id = ${userId}
+    `;
+
+    const rows = await sql`
+      SELECT
+        p.id,
+        p.user_id,
+        COALESCE(up.username, up.display_name, 'Você') AS author_name,
+        up.avatar_url AS author_avatar_url,
+        p.venue_id,
+        p.event_id,
+        p.caption,
+        p.tagged_person,
+        p.created_at,
+        v.name AS venue_name,
+        v.neighborhood,
+        v.address,
+        v.latitude,
+        v.longitude,
+        e.title AS event_title,
+        COALESCE(array_agg(pm.media_url ORDER BY pm.position) FILTER (WHERE pm.media_url IS NOT NULL), ARRAY[]::text[]) AS photo_urls,
+        COUNT(DISTINCT pl.user_id)::int AS likes,
+        COUNT(DISTINCT pc.id)::int AS comments,
+        EXISTS (
+          SELECT 1
+          FROM public.user_post_likes current_like
+          WHERE current_like.post_id = p.id
+            AND current_like.user_id = ${userId}
+        ) AS liked
+      FROM public.user_posts p
+      JOIN public.venues v ON v.id = p.venue_id
+      LEFT JOIN public.events e ON e.id = p.event_id
+      LEFT JOIN public.user_profiles up ON up.user_id = p.user_id
+      LEFT JOIN public.user_post_media pm ON pm.post_id = p.id
+      LEFT JOIN public.user_post_likes pl ON pl.post_id = p.id
+      LEFT JOIN public.user_post_comments pc ON pc.post_id = p.id
+      WHERE p.id = ${data.postId}
+      GROUP BY p.id, up.username, up.display_name, up.avatar_url, v.id, e.id
+      LIMIT 1
+    `;
+
+    return mapFeedPost(rows[0]);
+  });
+
+export const deleteUserPost = createServerFn({ method: "POST" })
+  .inputValidator((data: PostActionInput) => data)
+  .handler(async ({ data }) => {
+    const userId = await requireAuthenticatedUserId(data.userId);
+
+    const sql = await getSql();
+    if (!sql) throw new Error("DATABASE_URL não configurada.");
+    await ensurePostsSchema(sql);
+
+    const rows = await sql`
+      DELETE FROM public.user_posts
+      WHERE id = ${data.postId}
+        AND user_id = ${userId}
+      RETURNING id
+    `;
+
+    if (rows.length === 0) throw new Error("Post não encontrado ou sem permissão para excluir.");
+    return { deleted: true };
   });
 
 async function ensurePostAuthorProfile(

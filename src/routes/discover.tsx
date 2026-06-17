@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { LocateFixed, Search, UsersRound } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { authClient, getAuthUserName } from "@/auth";
 import { BottomNav } from "@/components/bottom-nav";
 import { CommentsSheet } from "@/components/comments-sheet";
@@ -13,6 +13,7 @@ import { PostComposer } from "@/components/post-composer";
 import {
   type EventSummary,
   type FeedPostSummary,
+  deleteUserPost,
   getCheckedInEventIds,
   getEventDetails,
   getEvents,
@@ -23,10 +24,19 @@ import {
   toggleCheckin,
   togglePostLike,
   toggleSavedEvent,
+  updateUserPost,
 } from "@/lib/data";
 import { canEventAcceptExplorerActions } from "@/lib/event-time";
 import { eventsQuery, feedPostsQuery } from "@/lib/queries";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   canRestoreLocation,
   type Coordinates,
@@ -144,6 +154,8 @@ function Discover() {
   const toggleSaved = useServerFn(toggleSavedEvent);
   const checkin = useServerFn(toggleCheckin);
   const likePost = useServerFn(togglePostLike);
+  const updatePost = useServerFn(updateUserPost);
+  const deletePost = useServerFn(deleteUserPost);
   const [search, setSearch] = useState("");
   const [location, setLocation] = useState<Coordinates | null>(null);
   const [locationLabel, setLocationLabel] = useState("Brasil");
@@ -155,6 +167,11 @@ function Discover() {
   const [radiusKm, setRadiusKm] = useState(() => readSavedRadiusKm());
   const [composerOpen, setComposerOpen] = useState(false);
   const [commentsPostId, setCommentsPostId] = useState<string | undefined>();
+  const [actionsPost, setActionsPost] = useState<FeedPostSummary | null>(null);
+  const [editingPost, setEditingPost] = useState<FeedPostSummary | null>(null);
+  const [editCaption, setEditCaption] = useState("");
+  const [editTaggedPerson, setEditTaggedPerson] = useState("");
+  const [postActionLoading, setPostActionLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -464,6 +481,64 @@ function Discover() {
     );
   }
 
+  function openPostActions(post: FeedPostSummary) {
+    if (post.userId !== user?.id) return;
+    setActionsPost(post);
+  }
+
+  function openEditPost(post: FeedPostSummary) {
+    setActionsPost(null);
+    setEditingPost(post);
+    setEditCaption(post.caption);
+    setEditTaggedPerson(post.taggedPerson ?? "");
+  }
+
+  async function onDeletePost(post: FeedPostSummary) {
+    const userId = await requireUser();
+    if (!userId || post.userId !== userId) return;
+
+    setPostActionLoading(true);
+    try {
+      await deletePost({ data: { userId, postId: post.id } });
+      setPosts((current) => current.filter((item) => item.id !== post.id));
+      setActionsPost(null);
+      setStatus("Post excluído.");
+    } catch (cause) {
+      setStatus(cause instanceof Error ? cause.message : "Não foi possível excluir o post.");
+    } finally {
+      setPostActionLoading(false);
+    }
+  }
+
+  async function onSubmitEditPost(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingPost) return;
+
+    const userId = await requireUser();
+    if (!userId || editingPost.userId !== userId) return;
+
+    setPostActionLoading(true);
+    try {
+      const updatedPost = await updatePost({
+        data: {
+          userId,
+          postId: editingPost.id,
+          caption: editCaption,
+          taggedPerson: editTaggedPerson,
+        },
+      });
+      setPosts((current) =>
+        current.map((post) => (post.id === updatedPost.id ? updatedPost : post)),
+      );
+      setEditingPost(null);
+      setStatus("Post atualizado.");
+    } catch (cause) {
+      setStatus(cause instanceof Error ? cause.message : "Não foi possível editar o post.");
+    } finally {
+      setPostActionLoading(false);
+    }
+  }
+
   function openNearbyMap() {
     navigate({ to: "/map" });
   }
@@ -599,6 +674,11 @@ function Discover() {
                   post={feedItem.item}
                   onLike={() => void onTogglePostLike(feedItem.item.id)}
                   onOpenComments={() => setCommentsPostId(feedItem.item.id)}
+                  onOpenActions={
+                    feedItem.item.userId === user?.id
+                      ? () => openPostActions(feedItem.item)
+                      : undefined
+                  }
                 />
               ),
             )}
@@ -625,6 +705,88 @@ function Discover() {
         onRequireAuth={() => navigate({ to: "/auth" })}
         onStatus={setStatus}
       />
+
+      <Dialog open={Boolean(actionsPost)} onOpenChange={(open) => !open && setActionsPost(null)}>
+        <DialogContent className="max-w-[min(35rem,calc(100vw-2rem))] gap-0 overflow-hidden rounded-3xl border-0 bg-background p-0 shadow-2xl [&>button]:hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Opções do post</DialogTitle>
+            <DialogDescription>Editar ou excluir sua publicação.</DialogDescription>
+          </DialogHeader>
+          <div className="divide-y divide-border text-center text-sm">
+            <button
+              type="button"
+              disabled={!actionsPost || postActionLoading}
+              onClick={() => actionsPost && void onDeletePost(actionsPost)}
+              className="block h-12 w-full font-bold text-primary transition hover:bg-muted disabled:opacity-60"
+            >
+              {postActionLoading ? "Excluindo..." : "Excluir"}
+            </button>
+            <button
+              type="button"
+              disabled={!actionsPost || postActionLoading}
+              onClick={() => actionsPost && openEditPost(actionsPost)}
+              className="block h-12 w-full transition hover:bg-muted disabled:opacity-60"
+            >
+              Editar
+            </button>
+            <DialogClose className="block h-12 w-full transition hover:bg-muted">
+              Cancelar
+            </DialogClose>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(editingPost)}
+        onOpenChange={(open) => {
+          if (!open && !postActionLoading) setEditingPost(null);
+        }}
+      >
+        <DialogContent className="max-w-[min(33rem,calc(100vw-2rem))] rounded-3xl p-5">
+          <DialogHeader>
+            <DialogTitle>Editar post</DialogTitle>
+            <DialogDescription>Atualize a legenda e quem estava com você.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={onSubmitEditPost} className="space-y-3">
+            <label className="block">
+              <span className="text-sm font-semibold">Legenda</span>
+              <textarea
+                value={editCaption}
+                onChange={(event) => setEditCaption(event.target.value)}
+                rows={4}
+                className="mt-1.5 w-full resize-none rounded-2xl border border-border bg-transparent px-3 py-3 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary"
+                placeholder="Escreva algo sobre esse rolê"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold">Com quem?</span>
+              <input
+                value={editTaggedPerson}
+                onChange={(event) => setEditTaggedPerson(event.target.value)}
+                className="mt-1.5 h-12 w-full rounded-2xl border border-border bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary"
+                placeholder="Nome da pessoa"
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                disabled={postActionLoading}
+                onClick={() => setEditingPost(null)}
+                className="h-11 rounded-full border border-border text-sm font-bold transition hover:bg-muted disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={postActionLoading}
+                className="h-11 rounded-full bg-primary text-sm font-bold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+              >
+                {postActionLoading ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <CommentsSheet
         open={Boolean(commentsPostId)}

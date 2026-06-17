@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Heart, MessageCircle, MapPin, Sparkles } from "lucide-react";
+import { Heart, MessageCircle, MapPin, MoreHorizontal, Sparkles } from "lucide-react";
 import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
 import { UserAvatar } from "@/components/user-avatar";
 import type { FeedPostSummary } from "@/lib/data";
@@ -9,9 +9,10 @@ type FeedPostCardProps = {
   post: FeedPostSummary;
   onLike: () => void;
   onOpenComments: () => void;
+  onOpenActions?: () => void;
 };
 
-export function FeedPostCard({ post, onLike, onOpenComments }: FeedPostCardProps) {
+export function FeedPostCard({ post, onLike, onOpenComments, onOpenActions }: FeedPostCardProps) {
   const photoUrls = Array.from(new Set(post.photoUrls));
   const relativeTime = formatPostRelativeTime(post.createdAt);
 
@@ -44,6 +45,16 @@ export function FeedPostCard({ post, onLike, onOpenComments }: FeedPostCardProps
             </div>
           ) : null}
         </div>
+        {onOpenActions ? (
+          <button
+            type="button"
+            onClick={onOpenActions}
+            aria-label="Abrir opções do post"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition hover:bg-muted active:scale-95"
+          >
+            <MoreHorizontal className="h-5 w-5" strokeWidth={2.4} />
+          </button>
+        ) : null}
       </div>
 
       {photoUrls.length > 0 ? (
