@@ -1,6 +1,15 @@
+import {
+  Camera as CameraPlugin,
+  CameraDirection,
+  EncodingType,
+  MediaTypeSelection,
+  type MediaResult,
+} from "@capacitor/camera";
+import { Capacitor } from "@capacitor/core";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
+  Camera as CameraIcon,
   CalendarPlus,
   CheckCircle2,
   EyeOff,
@@ -20,7 +29,15 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { authClient } from "@/auth";
 import { AppCurrencyField, AppDateTimeField, AppSelect } from "@/components/app-form-controls";
 import { EventCard } from "@/components/event-card";
@@ -98,8 +115,10 @@ function VenueDashboard() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [eventImage, setEventImage] = useState<File | null>(null);
   const [editingEvent, setEditingEvent] = useState<EventSummary | null>(null);
   const [editPreview, setEditPreview] = useState<string | null>(null);
+  const [editImage, setEditImage] = useState<File | null>(null);
   const [discoveryPreview, setDiscoveryPreview] = useState<EventSummary | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<EventSummary | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -159,7 +178,9 @@ function VenueDashboard() {
     const startsAt = String(formData.get("startsAt") ?? "");
     const price = String(formData.get("price") ?? "").trim();
     const recurrenceType = formData.get("recurrenceType") === "weekly" ? "weekly" : "none";
-    const image = formData.get("image") instanceof File ? (formData.get("image") as File) : null;
+    const imageField = formData.get("image");
+    const formImage = imageField instanceof File && imageField.size > 0 ? imageField : null;
+    const image = eventImage ?? formImage;
     const imageError = validateImageFile(image);
 
     if (!title || !category || !startsAt) {
@@ -201,6 +222,7 @@ function VenueDashboard() {
       form.reset();
       setShowEventForm(false);
       setPreview(null);
+      setEventImage(null);
       setStatus("Evento publicado.");
       await refreshDashboard(user.id);
     } catch (cause) {
@@ -233,7 +255,8 @@ function VenueDashboard() {
     const price = String(formData.get("price") ?? "").trim();
     const recurrenceType = formData.get("recurrenceType") === "weekly" ? "weekly" : "none";
     const imageField = formData.get("image");
-    const image = imageField instanceof File && imageField.size > 0 ? imageField : null;
+    const formImage = imageField instanceof File && imageField.size > 0 ? imageField : null;
+    const image = editImage ?? formImage;
 
     if (!title || !category || !startsAt) {
       setStatus(null);
@@ -280,6 +303,7 @@ function VenueDashboard() {
       form.reset();
       setEditingEvent(null);
       setEditPreview(null);
+      setEditImage(null);
       setStatus("Evento atualizado.");
       await refreshDashboard(user.id);
     } catch (cause) {
@@ -293,7 +317,10 @@ function VenueDashboard() {
     setError(null);
     setShowEventForm(false);
     setDiscoveryPreview(null);
+    setPreview(null);
+    setEventImage(null);
     setEditPreview(null);
+    setEditImage(null);
     setEditingEvent(event);
   }
 
@@ -635,6 +662,9 @@ function VenueDashboard() {
           onClick={() => {
             setEditingEvent(null);
             setDiscoveryPreview(null);
+            setEditImage(null);
+            setPreview(null);
+            setEventImage(null);
             setShowEventForm((value) => !value);
           }}
         >
@@ -647,7 +677,12 @@ function VenueDashboard() {
             onSubmit={submitEvent}
             className="mt-4 space-y-3 rounded-3xl border border-border p-4"
           >
-            <ImageField preview={preview} setPreview={setPreview} setError={setError} />
+            <ImageField
+              preview={preview}
+              setPreview={setPreview}
+              setImage={setEventImage}
+              setError={setError}
+            />
             <Field label="Título" name="title" placeholder="Nome real do evento" required />
             <AppSelect
               label="Categoria"
@@ -688,8 +723,10 @@ function VenueDashboard() {
               onCancel={() => {
                 setEditingEvent(null);
                 setEditPreview(null);
+                setEditImage(null);
               }}
               onSubmit={submitEditEvent}
+              setImage={setEditImage}
             />
           ) : null}
 
@@ -1507,6 +1544,7 @@ function EditEventPanel({
   event,
   preview,
   setPreview,
+  setImage,
   setError,
   onCancel,
   onSubmit,
@@ -1514,6 +1552,7 @@ function EditEventPanel({
   event: EventSummary;
   preview: string | null;
   setPreview: (value: string | null) => void;
+  setImage: (value: File | null) => void;
   setError: (value: string | null) => void;
   onCancel: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -1538,6 +1577,7 @@ function EditEventPanel({
         currentImage={event.image}
         preview={preview}
         setPreview={setPreview}
+        setImage={setImage}
         setError={setError}
       />
       <Field label="Título" name="title" defaultValue={event.title} required />
@@ -1634,75 +1674,235 @@ function OptionalImageField({
   currentImage,
   preview,
   setPreview,
+  setImage,
   setError,
 }: {
   currentImage: string;
   preview: string | null;
   setPreview: (value: string | null) => void;
+  setImage: (value: File | null) => void;
   setError: (value: string | null) => void;
 }) {
   return (
-    <label className="block">
+    <div className="block">
       <span className="text-sm font-semibold">Imagem do evento</span>
-      <span className="mt-1.5 flex min-h-32 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border bg-muted/40 p-4 text-center">
+      <EventImagePicker
+        preview={preview}
+        currentImage={currentImage}
+        emptyState={null}
+        required={false}
+        setPreview={setPreview}
+        setImage={setImage}
+        setError={setError}
+      >
         <img
           src={preview ?? currentImage}
           alt=""
           className="h-36 w-full rounded-2xl object-cover"
         />
-        <span className="mt-2 text-xs text-muted-foreground">Toque para trocar a imagem</span>
-        <input
-          type="file"
-          name="image"
-          accept="image/jpeg,image/png,image/webp"
-          className="sr-only"
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0] ?? null;
-            const imageError = file ? validateImageFile(file) : null;
-            setError(imageError);
-            setPreview(file && !imageError ? URL.createObjectURL(file) : null);
-          }}
-        />
+      </EventImagePicker>
+      <span className="mt-2 block text-xs text-muted-foreground">
+        Use a câmera ou escolha uma imagem da galeria.
       </span>
-    </label>
+    </div>
   );
 }
 
 function ImageField({
   preview,
   setPreview,
+  setImage,
   setError,
 }: {
   preview: string | null;
   setPreview: (value: string | null) => void;
+  setImage: (value: File | null) => void;
   setError: (value: string | null) => void;
 }) {
   return (
-    <label className="block">
+    <div className="block">
       <span className="text-sm font-semibold">Imagem real do evento</span>
-      <span className="mt-1.5 flex min-h-32 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border bg-muted/40 p-4 text-center">
-        {preview ? (
-          <img src={preview} alt="" className="h-36 w-full rounded-2xl object-cover" />
-        ) : (
+      <EventImagePicker
+        preview={preview}
+        currentImage={null}
+        required
+        setPreview={setPreview}
+        setImage={setImage}
+        setError={setError}
+        emptyState={
           <>
             <ImagePlus className="h-7 w-7 text-muted-foreground" />
             <span className="mt-2 text-sm font-semibold">Enviar imagem</span>
             <span className="mt-1 text-xs text-muted-foreground">JPG, PNG ou WebP até 2MB</span>
           </>
-        )}
-        <input
-          type="file"
-          name="image"
-          accept="image/jpeg,image/png,image/webp"
-          required
-          className="sr-only"
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0] ?? null;
-            setError(validateImageFile(file));
-            setPreview(file ? URL.createObjectURL(file) : null);
-          }}
-        />
-      </span>
-    </label>
+        }
+      >
+        {preview ? (
+          <img src={preview} alt="" className="h-36 w-full rounded-2xl object-cover" />
+        ) : null}
+      </EventImagePicker>
+    </div>
   );
+}
+
+function EventImagePicker({
+  preview,
+  currentImage,
+  required,
+  emptyState,
+  setPreview,
+  setImage,
+  setError,
+  children,
+}: {
+  preview: string | null;
+  currentImage: string | null;
+  required: boolean;
+  emptyState: ReactNode;
+  setPreview: (value: string | null) => void;
+  setImage: (value: File | null) => void;
+  setError: (value: string | null) => void;
+  children: ReactNode;
+}) {
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const hasImage = Boolean(preview || currentImage);
+
+  function handleSelectedFile(file: File | null) {
+    const imageError = required ? validateImageFile(file) : file ? validateImageFile(file) : null;
+    setError(imageError);
+    setImage(file && !imageError ? file : null);
+    setPreview(file && !imageError ? URL.createObjectURL(file) : null);
+  }
+
+  async function openCamera() {
+    if (!Capacitor.isNativePlatform()) {
+      cameraInputRef.current?.click();
+      return;
+    }
+
+    try {
+      const result = await CameraPlugin.takePhoto({
+        quality: 86,
+        targetWidth: 1600,
+        targetHeight: 1600,
+        correctOrientation: true,
+        encodingType: EncodingType.JPEG,
+        cameraDirection: CameraDirection.Rear,
+        saveToGallery: false,
+        includeMetadata: true,
+      });
+      handleSelectedFile(await mediaResultToFile(result, "camera"));
+    } catch (cause) {
+      if (!isUserCancelledMediaPicker(cause)) {
+        setError("Não foi possível abrir a câmera agora.");
+      }
+    }
+  }
+
+  async function openGallery() {
+    if (!Capacitor.isNativePlatform()) {
+      galleryInputRef.current?.click();
+      return;
+    }
+
+    try {
+      const result = await CameraPlugin.chooseFromGallery({
+        mediaType: MediaTypeSelection.Photo,
+        allowMultipleSelection: false,
+        limit: 1,
+        includeMetadata: true,
+      });
+      const photo = result.results[0];
+      if (photo) handleSelectedFile(await mediaResultToFile(photo, "galeria"));
+    } catch (cause) {
+      if (!isUserCancelledMediaPicker(cause)) {
+        setError("Não foi possível abrir a galeria agora.");
+      }
+    }
+  }
+
+  return (
+    <div className="mt-1.5 space-y-2">
+      <div className="flex min-h-32 flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border bg-muted/40 p-4 text-center">
+        {hasImage ? children : emptyState}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={openCamera}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        >
+          <CameraIcon className="h-4 w-4" />
+          Câmera
+        </button>
+        <button
+          type="button"
+          onClick={openGallery}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        >
+          <ImagePlus className="h-4 w-4" />
+          Galeria
+        </button>
+      </div>
+      <input
+        ref={cameraInputRef}
+        type="file"
+        name="image"
+        accept="image/jpeg,image/png,image/webp"
+        capture="environment"
+        className="sr-only"
+        onChange={(event) => {
+          handleSelectedFile(event.currentTarget.files?.[0] ?? null);
+          event.currentTarget.value = "";
+        }}
+      />
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="sr-only"
+        onChange={(event) => {
+          handleSelectedFile(event.currentTarget.files?.[0] ?? null);
+          event.currentTarget.value = "";
+        }}
+      />
+    </div>
+  );
+}
+
+async function mediaResultToFile(result: MediaResult, fallbackName: string) {
+  const source = result.webPath ?? result.uri;
+  if (!source) throw new Error("Imagem indisponível.");
+
+  const response = await fetch(source);
+  const blob = await response.blob();
+  const mimeType = normalizeImageMimeType(blob.type, result.metadata?.format);
+  const extension = extensionFromMimeType(mimeType);
+
+  return new File([blob], `${fallbackName}-${Date.now()}.${extension}`, {
+    type: mimeType,
+    lastModified: Date.now(),
+  });
+}
+
+function normalizeImageMimeType(blobType: string, format?: string) {
+  if (blobType.startsWith("image/")) return blobType;
+
+  const normalizedFormat = format?.toLowerCase();
+  if (normalizedFormat === "png") return "image/png";
+  if (normalizedFormat === "webp") return "image/webp";
+  return "image/jpeg";
+}
+
+function extensionFromMimeType(mimeType: string) {
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  return "jpg";
+}
+
+function isUserCancelledMediaPicker(cause: unknown) {
+  const message =
+    cause instanceof Error ? cause.message.toLowerCase() : String(cause).toLowerCase();
+  return message.includes("cancel") || message.includes("dismiss") || message.includes("abort");
 }

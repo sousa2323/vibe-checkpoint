@@ -1405,7 +1405,7 @@ export const getEvents = createServerFn({ method: "GET" }).handler(
                 + e.recurrence_time
                 + interval '7 days'
             END
-          ELSE e.starts_at
+          ELSE (e.starts_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo'
         END AS starts_at
       ) occurrence
       JOIN public.venues v ON v.id = e.venue_id
@@ -1472,7 +1472,7 @@ export const getVenues = createServerFn({ method: "GET" }).handler(
                 + e.recurrence_time
                 + interval '7 days'
             END
-          ELSE e.starts_at
+          ELSE (e.starts_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo'
         END AS starts_at
       ) venue_occurrence ON true
       LEFT JOIN public.checkins c ON c.venue_id = v.id
@@ -2087,19 +2087,22 @@ export const getPostComposerEvents = createServerFn({ method: "GET" })
       JOIN public.events e ON e.id = c.event_id
       JOIN public.venues v ON v.id = e.venue_id
       CROSS JOIN LATERAL (
+        SELECT now() AT TIME ZONE 'America/Sao_Paulo' AS current_at
+      ) local_time
+      CROSS JOIN LATERAL (
         SELECT CASE
           WHEN e.recurrence_type = 'weekly' THEN
             CASE
-              WHEN date_trunc('day', now())
-                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
-                + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
-              THEN date_trunc('day', now())
-                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+              WHEN date_trunc('day', local_time.current_at)
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM local_time.current_at)::int) * interval '1 day')
+                + e.recurrence_time > local_time.current_at - ${eventPostWindowInterval}::interval
+              THEN (date_trunc('day', local_time.current_at)
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM local_time.current_at)::int) * interval '1 day')
+                + e.recurrence_time) AT TIME ZONE 'America/Sao_Paulo'
+              ELSE (date_trunc('day', local_time.current_at)
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM local_time.current_at)::int) * interval '1 day')
                 + e.recurrence_time
-              ELSE date_trunc('day', now())
-                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
-                + e.recurrence_time
-                + interval '7 days'
+                + interval '7 days') AT TIME ZONE 'America/Sao_Paulo'
             END
           ELSE e.starts_at
         END AS starts_at
@@ -2115,7 +2118,6 @@ export const getPostComposerEvents = createServerFn({ method: "GET" })
             AND c.occurrence_starts_at >= occurrence.starts_at - interval '1 minute'
             AND c.occurrence_starts_at < occurrence.starts_at + interval '1 minute'
           )
-          OR c.created_at >= now() - ${eventPostWindowInterval}::interval
         )
       ORDER BY e.title ASC
     `;
@@ -2156,19 +2158,22 @@ export const createUserPost = createServerFn({ method: "POST" })
       FROM public.checkins c
       JOIN public.events e ON e.id = c.event_id
       CROSS JOIN LATERAL (
+        SELECT now() AT TIME ZONE 'America/Sao_Paulo' AS current_at
+      ) local_time
+      CROSS JOIN LATERAL (
         SELECT CASE
           WHEN e.recurrence_type = 'weekly' THEN
             CASE
-              WHEN date_trunc('day', now())
-                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
-                + e.recurrence_time > now() - ${eventPostWindowInterval}::interval
-              THEN date_trunc('day', now())
-                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+              WHEN date_trunc('day', local_time.current_at)
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM local_time.current_at)::int) * interval '1 day')
+                + e.recurrence_time > local_time.current_at - ${eventPostWindowInterval}::interval
+              THEN (date_trunc('day', local_time.current_at)
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM local_time.current_at)::int) * interval '1 day')
+                + e.recurrence_time) AT TIME ZONE 'America/Sao_Paulo'
+              ELSE (date_trunc('day', local_time.current_at)
+                + ((e.recurrence_weekday - EXTRACT(DOW FROM local_time.current_at)::int) * interval '1 day')
                 + e.recurrence_time
-              ELSE date_trunc('day', now())
-                + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
-                + e.recurrence_time
-                + interval '7 days'
+                + interval '7 days') AT TIME ZONE 'America/Sao_Paulo'
             END
           ELSE e.starts_at
         END AS starts_at
@@ -2185,7 +2190,6 @@ export const createUserPost = createServerFn({ method: "POST" })
             AND c.occurrence_starts_at >= occurrence.starts_at - interval '1 minute'
             AND c.occurrence_starts_at < occurrence.starts_at + interval '1 minute'
           )
-          OR c.created_at >= now() - ${eventPostWindowInterval}::interval
         )
       LIMIT 1
     `;
@@ -2721,7 +2725,7 @@ export const getVenueDetails = createServerFn({ method: "GET" })
                   + e.recurrence_time
                   + interval '7 days'
               END
-            ELSE e.starts_at
+            ELSE (e.starts_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo'
           END AS starts_at
         ) occurrence
         JOIN public.venues v ON v.id = e.venue_id
@@ -2914,22 +2918,26 @@ export const toggleCheckin = createServerFn({ method: "POST" })
     const eventRows = await sql`
         SELECT
           occurrence.starts_at,
-          occurrence.starts_at > now() - ${eventActiveWindowInterval}::interval AS actions_available
+          occurrence.starts_at > now() - ${eventActiveWindowInterval}::interval AS not_ended,
+          occurrence.starts_at <= now() AS started
         FROM public.events e
+        CROSS JOIN LATERAL (
+          SELECT now() AT TIME ZONE 'America/Sao_Paulo' AS current_at
+        ) local_time
         CROSS JOIN LATERAL (
           SELECT CASE
             WHEN e.recurrence_type = 'weekly' THEN
               CASE
-                WHEN date_trunc('day', now())
-                  + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
-                  + e.recurrence_time > now() - ${eventActiveWindowInterval}::interval
-                THEN date_trunc('day', now())
-                  + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
+                WHEN date_trunc('day', local_time.current_at)
+                  + ((e.recurrence_weekday - EXTRACT(DOW FROM local_time.current_at)::int) * interval '1 day')
+                  + e.recurrence_time > local_time.current_at - ${eventActiveWindowInterval}::interval
+                THEN (date_trunc('day', local_time.current_at)
+                  + ((e.recurrence_weekday - EXTRACT(DOW FROM local_time.current_at)::int) * interval '1 day')
+                  + e.recurrence_time) AT TIME ZONE 'America/Sao_Paulo'
+                ELSE (date_trunc('day', local_time.current_at)
+                  + ((e.recurrence_weekday - EXTRACT(DOW FROM local_time.current_at)::int) * interval '1 day')
                   + e.recurrence_time
-                ELSE date_trunc('day', now())
-                  + ((e.recurrence_weekday - EXTRACT(DOW FROM now())::int) * interval '1 day')
-                  + e.recurrence_time
-                  + interval '7 days'
+                  + interval '7 days') AT TIME ZONE 'America/Sao_Paulo'
               END
             ELSE e.starts_at
           END AS starts_at
@@ -2940,7 +2948,8 @@ export const toggleCheckin = createServerFn({ method: "POST" })
         LIMIT 1
       `;
     if (eventRows.length === 0) throw new Error("Evento não encontrado.");
-    if (!eventRows[0]?.actions_available) throw new Error("Check-in encerrado para esse evento.");
+    if (!eventRows[0]?.started) throw new Error("Check-in disponível quando o evento começar.");
+    if (!eventRows[0]?.not_ended) throw new Error("Check-in encerrado para esse evento.");
 
     const occurrenceStartsAt =
       eventRows[0].starts_at instanceof Date

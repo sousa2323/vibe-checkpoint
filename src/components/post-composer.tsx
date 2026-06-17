@@ -47,6 +47,10 @@ type PreviewPhoto = {
   previewUrl: string;
 };
 
+const optimizedImageMimeType = "image/jpeg";
+const maxOptimizedImageBytes = 1.85 * 1024 * 1024;
+const maxOptimizedImageDimension = 1600;
+
 export function PostComposer({
   open,
   userId,
@@ -212,24 +216,37 @@ export function PostComposer({
     try {
       const photoUrls = [] as string[];
       for (const photo of photos) {
-        const base64 = await fileToBase64(photo.file);
-        const result = await upload({
-          data: { userId, mimeType: photo.file.type, base64 },
-        });
+        const optimizedPhoto = await withClientTimeout(
+          optimizeImageForUpload(photo.file),
+          15000,
+          "Tempo esgotado ao preparar a imagem. Tente outra foto.",
+        );
+        const base64 = await fileToBase64(optimizedPhoto);
+        const result = await withClientTimeout(
+          upload({
+            data: { userId, mimeType: optimizedPhoto.type, base64 },
+          }),
+          30000,
+          "Tempo esgotado ao enviar a imagem. Tente novamente.",
+        );
         photoUrls.push(result.mediaUrl);
       }
 
-      const post = await createPost({
-        data: {
-          userId,
-          authorName: userName,
-          authorAvatarUrl: userAvatarUrl,
-          eventId,
-          caption,
-          photoUrls,
-          taggedPerson,
-        },
-      });
+      const post = await withClientTimeout(
+        createPost({
+          data: {
+            userId,
+            authorName: userName,
+            authorAvatarUrl: userAvatarUrl,
+            eventId,
+            caption,
+            photoUrls,
+            taggedPerson,
+          },
+        }),
+        20000,
+        "Tempo esgotado ao publicar. Tente novamente.",
+      );
       onCreated(post);
       onOpenChange(false);
       resetForm();
@@ -331,18 +348,24 @@ export function PostComposer({
                     <input
                       ref={cameraInputRef}
                       type="file"
-                      accept="image/jpeg,image/png,image/webp"
+                      accept="image/*"
                       capture="environment"
                       className="hidden"
-                      onChange={(event) => handleFiles(event.target.files)}
+                      onChange={(event) => {
+                        handleFiles(event.target.files);
+                        event.target.value = "";
+                      }}
                     />
                     <input
                       ref={galleryInputRef}
                       type="file"
-                      accept="image/jpeg,image/png,image/webp"
+                      accept="image/*"
                       multiple
                       className="hidden"
-                      onChange={(event) => handleFiles(event.target.files)}
+                      onChange={(event) => {
+                        handleFiles(event.target.files);
+                        event.target.value = "";
+                      }}
                     />
                   </div>
                 ) : null}
@@ -429,6 +452,104 @@ function extensionFromMimeType(mimeType: string) {
   if (mimeType === "image/png") return "png";
   if (mimeType === "image/webp") return "webp";
   return "jpg";
+}
+
+async function optimizeImageForUpload(file: File) {
+  const image = await loadImage(file);
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Não foi possível preparar a imagem.");
+
+  const baseScale = Math.min(
+    1,
+    maxOptimizedImageDimension / image.width,
+    maxOptimizedImageDimension / image.height,
+  );
+  let width = Math.max(1, Math.round(image.width * baseScale));
+  let height = Math.max(1, Math.round(image.height * baseScale));
+  const qualities = [0.82, 0.74, 0.66, 0.58, 0.5, 0.42];
+  let smallestBlob: Blob | null = null;
+
+  for (let resizeAttempt = 0; resizeAttempt < 4; resizeAttempt += 1) {
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(image, 0, 0, width, height);
+
+    for (const quality of qualities) {
+      const blob = await canvasToBlob(canvas, optimizedImageMimeType, quality);
+      if (!smallestBlob || blob.size < smallestBlob.size) smallestBlob = blob;
+      if (blob.size <= maxOptimizedImageBytes) {
+        return new File([blob], `${fileNameWithoutExtension(file.name) || "foto"}.jpg`, {
+          type: optimizedImageMimeType,
+          lastModified: Date.now(),
+        });
+      }
+    }
+
+    width = Math.max(1, Math.round(width * 0.75));
+    height = Math.max(1, Math.round(height * 0.75));
+  }
+
+  if (!smallestBlob || smallestBlob.size > maxOptimizedImageBytes) {
+    throw new Error("Não foi possível otimizar essa imagem. Tente outra foto.");
+  }
+
+  return new File([smallestBlob], `${fileNameWithoutExtension(file.name) || "foto"}.jpg`, {
+    type: optimizedImageMimeType,
+    lastModified: Date.now(),
+  });
+}
+
+function loadImage(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Não foi possível abrir essa imagem."));
+    };
+    image.src = url;
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Não foi possível preparar a imagem."));
+      },
+      type,
+      quality,
+    );
+  });
+}
+
+function fileNameWithoutExtension(name: string) {
+  return name.replace(/\.[^.]+$/, "");
+}
+
+async function withClientTimeout<T>(
+  promise: PromiseLike<T>,
+  milliseconds: number,
+  message: string,
+) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), milliseconds);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 function isUserCancelledMediaPicker(cause: unknown) {
