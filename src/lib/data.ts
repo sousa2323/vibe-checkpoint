@@ -400,6 +400,7 @@ type PostActionInput = {
 
 type UpdateUserPostInput = PostActionInput & {
   caption: string;
+  photoUrls?: string[];
   taggedPerson?: string;
   taggedUserId?: string;
   taggedUsers?: UserMentionSummary[];
@@ -2539,6 +2540,10 @@ export const updateUserPost = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<FeedPostSummary> => {
     const userId = await requireAuthenticatedUserId(data.userId);
     const caption = data.caption.trim();
+    const nextPhotoUrls = data.photoUrls
+      ?.map((url) => url.trim())
+      .filter(Boolean)
+      .slice(0, 3);
     const taggedPerson = data.taggedPerson?.trim();
     const taggedUserId = data.taggedUserId?.trim();
 
@@ -2568,7 +2573,8 @@ export const updateUserPost = createServerFn({ method: "POST" })
     if (!post) throw new Error("Post não encontrado.");
     if (String(post.user_id) !== userId)
       throw new Error("Você só pode editar seus próprios posts.");
-    if (!caption && Number(post.photo_count ?? 0) === 0) {
+    const finalPhotoCount = nextPhotoUrls ? nextPhotoUrls.length : Number(post.photo_count ?? 0);
+    if (!caption && finalPhotoCount === 0) {
       throw new Error("Escreva uma legenda ou mantenha uma foto no post.");
     }
 
@@ -2584,6 +2590,20 @@ export const updateUserPost = createServerFn({ method: "POST" })
       WHERE id = ${data.postId}
         AND user_id = ${userId}
     `;
+
+    if (nextPhotoUrls) {
+      await sql`
+        DELETE FROM public.user_post_media
+        WHERE post_id = ${data.postId}
+      `;
+
+      for (const [position, mediaUrl] of nextPhotoUrls.entries()) {
+        await sql`
+          INSERT INTO public.user_post_media (post_id, media_url, position)
+          VALUES (${data.postId}, ${mediaUrl}, ${position})
+        `;
+      }
+    }
 
     await syncPostMentions(sql, data.postId, mentionedUsers);
     await notifyTaggedUsers(sql, {

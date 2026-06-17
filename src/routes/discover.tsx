@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { LocateFixed, Search, UsersRound } from "lucide-react";
+import { ImagePlus, LocateFixed, Search, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { authClient, getAuthUserName } from "@/auth";
 import { BottomNav } from "@/components/bottom-nav";
@@ -29,6 +29,7 @@ import {
   updateUserPost,
 } from "@/lib/data";
 import { canEventAcceptExplorerActions } from "@/lib/event-time";
+import { uploadMedia } from "@/lib/media";
 import { eventsQuery, feedPostsQuery } from "@/lib/queries";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -79,6 +80,16 @@ const establishmentCategories = [
 
 const LOCATION_PROMPT_DISMISSED_KEY = "chegaai:location-prompt-dismissed";
 const REGION_ALERTS_KEY = "chegaai:region-alerts";
+const maxPostPhotos = 3;
+const optimizedImageMimeType = "image/jpeg";
+const maxOptimizedImageBytes = 1.85 * 1024 * 1024;
+const maxOptimizedImageDimension = 1600;
+
+type EditPhotoPreview = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
 
 function readLocationPromptDismissed() {
   if (typeof window === "undefined") return false;
@@ -158,6 +169,7 @@ function Discover() {
   const likePost = useServerFn(togglePostLike);
   const updatePost = useServerFn(updateUserPost);
   const deletePost = useServerFn(deleteUserPost);
+  const upload = useServerFn(uploadMedia);
   const [search, setSearch] = useState("");
   const [location, setLocation] = useState<Coordinates | null>(null);
   const [locationLabel, setLocationLabel] = useState("Brasil");
@@ -172,11 +184,14 @@ function Discover() {
   const [actionsPost, setActionsPost] = useState<FeedPostSummary | null>(null);
   const [editingPost, setEditingPost] = useState<FeedPostSummary | null>(null);
   const [editCaption, setEditCaption] = useState("");
+  const [editExistingPhotoUrls, setEditExistingPhotoUrls] = useState<string[]>([]);
+  const [editNewPhotos, setEditNewPhotos] = useState<EditPhotoPreview[]>([]);
   const [editTaggedUsers, setEditTaggedUsers] = useState<UserMentionSummary[]>([]);
   const [postActionLoading, setPostActionLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const editPhotoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user?.id) {
@@ -492,7 +507,57 @@ function Discover() {
     setActionsPost(null);
     setEditingPost(post);
     setEditCaption(post.caption);
+    cleanupEditNewPhotos();
+    setEditExistingPhotoUrls(Array.from(new Set(post.photoUrls)).slice(0, maxPostPhotos));
+    setEditNewPhotos([]);
     setEditTaggedUsers(getPostTaggedUsers(post));
+  }
+
+  function cleanupEditNewPhotos() {
+    setEditNewPhotos((current) => {
+      current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+      return [];
+    });
+  }
+
+  function closeEditPost() {
+    setEditingPost(null);
+    setEditTaggedUsers([]);
+    setEditExistingPhotoUrls([]);
+    cleanupEditNewPhotos();
+  }
+
+  function addEditPhotoFiles(files: FileList | File[] | null) {
+    if (!files) return;
+    const currentCount = editExistingPhotoUrls.length + editNewPhotos.length;
+    const remaining = maxPostPhotos - currentCount;
+    if (remaining <= 0) return;
+
+    const nextFiles = Array.from(files)
+      .filter((file) => file.type.startsWith("image/"))
+      .slice(0, remaining);
+    if (nextFiles.length === 0) return;
+
+    setEditNewPhotos((current) => [
+      ...current,
+      ...nextFiles.map((file) => ({
+        id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+      })),
+    ]);
+  }
+
+  function removeEditExistingPhoto(url: string) {
+    setEditExistingPhotoUrls((current) => current.filter((photoUrl) => photoUrl !== url));
+  }
+
+  function removeEditNewPhoto(photoId: string) {
+    setEditNewPhotos((current) => {
+      const removed = current.find((photo) => photo.id === photoId);
+      if (removed) URL.revokeObjectURL(removed.previewUrl);
+      return current.filter((photo) => photo.id !== photoId);
+    });
   }
 
   async function onDeletePost(post: FeedPostSummary) {
@@ -521,11 +586,29 @@ function Discover() {
 
     setPostActionLoading(true);
     try {
+      const uploadedPhotoUrls: string[] = [];
+      for (const photo of editNewPhotos) {
+        const optimizedPhoto = await withClientTimeout(
+          optimizeImageForUpload(photo.file),
+          15000,
+          "Tempo esgotado ao preparar a imagem. Tente outra foto.",
+        );
+        const base64 = await fileToBase64(optimizedPhoto);
+        const result = await withClientTimeout(
+          upload({ data: { userId, mimeType: optimizedPhoto.type, base64 } }),
+          30000,
+          "Tempo esgotado ao enviar a imagem. Tente novamente.",
+        );
+        uploadedPhotoUrls.push(result.mediaUrl);
+      }
+
+      const photoUrls = [...editExistingPhotoUrls, ...uploadedPhotoUrls].slice(0, maxPostPhotos);
       const updatedPost = await updatePost({
         data: {
           userId,
           postId: editingPost.id,
           caption: editCaption,
+          photoUrls,
           taggedPerson: editTaggedUsers[0] ? mentionLabel(editTaggedUsers[0]) : undefined,
           taggedUserId: editTaggedUsers[0]?.userId,
           taggedUsers: editTaggedUsers,
@@ -534,8 +617,7 @@ function Discover() {
       setPosts((current) =>
         current.map((post) => (post.id === updatedPost.id ? updatedPost : post)),
       );
-      setEditingPost(null);
-      setEditTaggedUsers([]);
+      closeEditPost();
       setStatus("Post atualizado.");
     } catch (cause) {
       setStatus(cause instanceof Error ? cause.message : "Não foi possível editar o post.");
@@ -745,8 +827,7 @@ function Discover() {
         open={Boolean(editingPost)}
         onOpenChange={(open) => {
           if (!open && !postActionLoading) {
-            setEditingPost(null);
-            setEditTaggedUsers([]);
+            closeEditPost();
           }
         }}
       >
@@ -766,6 +847,63 @@ function Discover() {
                 placeholder="Escreva algo sobre esse rolê"
               />
             </label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold">Fotos</span>
+                <span className="text-xs font-semibold text-muted-foreground">
+                  {editExistingPhotoUrls.length + editNewPhotos.length}/{maxPostPhotos}
+                </span>
+              </div>
+
+              {editExistingPhotoUrls.length > 0 || editNewPhotos.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {editExistingPhotoUrls.map((url) => (
+                    <EditablePostPhoto
+                      key={url}
+                      src={url}
+                      alt="Foto atual do post"
+                      onRemove={() => removeEditExistingPhoto(url)}
+                    />
+                  ))}
+                  {editNewPhotos.map((photo) => (
+                    <EditablePostPhoto
+                      key={photo.id}
+                      src={photo.previewUrl}
+                      alt="Nova foto do post"
+                      onRemove={() => removeEditNewPhoto(photo.id)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border p-4 text-center text-sm font-semibold text-muted-foreground">
+                  Nenhuma foto no post.
+                </div>
+              )}
+
+              <input
+                ref={editPhotoInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  addEditPhotoFiles(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                disabled={
+                  postActionLoading ||
+                  editExistingPhotoUrls.length + editNewPhotos.length >= maxPostPhotos
+                }
+                onClick={() => editPhotoInputRef.current?.click()}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-full border border-border text-sm font-bold transition hover:bg-muted disabled:opacity-60"
+              >
+                <ImagePlus className="h-4 w-4" />
+                Adicionar foto
+              </button>
+            </div>
             <UserMentionMultiPicker
               currentUserId={user?.id}
               label="Com quem?"
@@ -778,10 +916,7 @@ function Discover() {
               <button
                 type="button"
                 disabled={postActionLoading}
-                onClick={() => {
-                  setEditingPost(null);
-                  setEditTaggedUsers([]);
-                }}
+                onClick={closeEditPost}
                 className="h-11 rounded-full border border-border text-sm font-bold transition hover:bg-muted disabled:opacity-60"
               >
                 Cancelar
@@ -857,6 +992,30 @@ function feedTime(item: { createdAt?: string; startsAt?: string }) {
   return Number.isNaN(time) ? 0 : time;
 }
 
+function EditablePostPhoto({
+  src,
+  alt,
+  onRemove,
+}: {
+  src: string;
+  alt: string;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-muted">
+      <img src={src} alt={alt} className="aspect-square w-full object-cover" />
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="Remover foto"
+        className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white shadow-lg backdrop-blur transition active:scale-95"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 function getPostTaggedUsers(post: FeedPostSummary): UserMentionSummary[] {
   if (post.taggedUsers?.length) return post.taggedUsers;
   if (!post.taggedUserId) return [];
@@ -894,6 +1053,115 @@ function normalizeSearch(value: string) {
 function matchedCategory(term: string) {
   if (!term) return undefined;
   return establishmentCategories.find((category) => normalizeSearch(category).includes(term));
+}
+
+async function optimizeImageForUpload(file: File) {
+  const image = await loadImage(file);
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Não foi possível preparar a imagem.");
+
+  const baseScale = Math.min(
+    1,
+    maxOptimizedImageDimension / image.width,
+    maxOptimizedImageDimension / image.height,
+  );
+  let width = Math.max(1, Math.round(image.width * baseScale));
+  let height = Math.max(1, Math.round(image.height * baseScale));
+  const qualities = [0.82, 0.74, 0.66, 0.58, 0.5, 0.42];
+  let smallestBlob: Blob | null = null;
+
+  for (let resizeAttempt = 0; resizeAttempt < 4; resizeAttempt += 1) {
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(image, 0, 0, width, height);
+
+    for (const quality of qualities) {
+      const blob = await canvasToBlob(canvas, optimizedImageMimeType, quality);
+      if (!smallestBlob || blob.size < smallestBlob.size) smallestBlob = blob;
+      if (blob.size <= maxOptimizedImageBytes) {
+        return new File([blob], `${fileNameWithoutExtension(file.name) || "foto"}.jpg`, {
+          type: optimizedImageMimeType,
+          lastModified: Date.now(),
+        });
+      }
+    }
+
+    width = Math.max(1, Math.round(width * 0.75));
+    height = Math.max(1, Math.round(height * 0.75));
+  }
+
+  if (!smallestBlob || smallestBlob.size > maxOptimizedImageBytes) {
+    throw new Error("Não foi possível otimizar essa imagem. Tente outra foto.");
+  }
+
+  return new File([smallestBlob], `${fileNameWithoutExtension(file.name) || "foto"}.jpg`, {
+    type: optimizedImageMimeType,
+    lastModified: Date.now(),
+  });
+}
+
+function loadImage(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Não foi possível carregar a imagem."));
+    };
+    image.src = url;
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("Não foi possível preparar a imagem."));
+          return;
+        }
+        resolve(blob);
+      },
+      type,
+      quality,
+    );
+  });
+}
+
+function fileNameWithoutExtension(name: string) {
+  return name.replace(/\.[^.]+$/, "");
+}
+
+function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function withClientTimeout<T>(
+  promise: PromiseLike<T>,
+  milliseconds: number,
+  message: string,
+) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), milliseconds);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 function getUserImage(user: unknown) {
