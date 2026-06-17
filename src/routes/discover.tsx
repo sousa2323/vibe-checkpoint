@@ -10,9 +10,11 @@ import { FeedPostCard } from "@/components/feed-post-card";
 import { NativeFeedback } from "@/components/native-feedback";
 import { NotificationBellButton } from "@/components/notification-bell-button";
 import { PostComposer } from "@/components/post-composer";
+import { UserMentionPicker } from "@/components/user-mention-picker";
 import {
   type EventSummary,
   type FeedPostSummary,
+  type UserMentionSummary,
   deleteUserPost,
   getCheckedInEventIds,
   getEventDetails,
@@ -171,6 +173,7 @@ function Discover() {
   const [editingPost, setEditingPost] = useState<FeedPostSummary | null>(null);
   const [editCaption, setEditCaption] = useState("");
   const [editTaggedPerson, setEditTaggedPerson] = useState("");
+  const [editTaggedUser, setEditTaggedUser] = useState<UserMentionSummary | null>(null);
   const [postActionLoading, setPostActionLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
@@ -491,6 +494,14 @@ function Discover() {
     setEditingPost(post);
     setEditCaption(post.caption);
     setEditTaggedPerson(post.taggedPerson ?? "");
+    setEditTaggedUser(
+      post.taggedUserId
+        ? {
+            userId: post.taggedUserId,
+            username: post.taggedPerson?.replace(/^@/, "") || undefined,
+          }
+        : null,
+    );
   }
 
   async function onDeletePost(post: FeedPostSummary) {
@@ -525,12 +536,14 @@ function Discover() {
           postId: editingPost.id,
           caption: editCaption,
           taggedPerson: editTaggedPerson,
+          taggedUserId: editTaggedUser?.userId,
         },
       });
       setPosts((current) =>
         current.map((post) => (post.id === updatedPost.id ? updatedPost : post)),
       );
       setEditingPost(null);
+      setEditTaggedUser(null);
       setStatus("Post atualizado.");
     } catch (cause) {
       setStatus(cause instanceof Error ? cause.message : "Não foi possível editar o post.");
@@ -739,7 +752,10 @@ function Discover() {
       <Dialog
         open={Boolean(editingPost)}
         onOpenChange={(open) => {
-          if (!open && !postActionLoading) setEditingPost(null);
+          if (!open && !postActionLoading) {
+            setEditingPost(null);
+            setEditTaggedUser(null);
+          }
         }}
       >
         <DialogContent className="max-w-[min(33rem,calc(100vw-2rem))] rounded-3xl p-5">
@@ -758,20 +774,24 @@ function Discover() {
                 placeholder="Escreva algo sobre esse rolê"
               />
             </label>
-            <label className="block">
-              <span className="text-sm font-semibold">Com quem?</span>
-              <input
-                value={editTaggedPerson}
-                onChange={(event) => setEditTaggedPerson(event.target.value)}
-                className="mt-1.5 h-12 w-full rounded-2xl border border-border bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary"
-                placeholder="Nome da pessoa"
-              />
-            </label>
+            <UserMentionPicker
+              currentUserId={user?.id}
+              label="Com quem?"
+              value={editTaggedPerson}
+              selectedUser={editTaggedUser}
+              onValueChange={setEditTaggedPerson}
+              onSelectedUserChange={setEditTaggedUser}
+              placeholder="@amigo"
+              inputClassName="rounded-2xl border border-border bg-transparent focus-within:ring-2 focus-within:ring-primary"
+            />
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button
                 type="button"
                 disabled={postActionLoading}
-                onClick={() => setEditingPost(null)}
+                onClick={() => {
+                  setEditingPost(null);
+                  setEditTaggedUser(null);
+                }}
                 className="h-11 rounded-full border border-border text-sm font-bold transition hover:bg-muted disabled:opacity-60"
               >
                 Cancelar

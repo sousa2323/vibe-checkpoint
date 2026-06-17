@@ -13,7 +13,6 @@ import {
   Images,
   LoaderCircle,
   MapPin,
-  UsersRound,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -26,7 +25,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { FeedPostSummary, PostComposerEventOption } from "@/lib/data";
+import { UserMentionPicker } from "@/components/user-mention-picker";
+import type { FeedPostSummary, PostComposerEventOption, UserMentionSummary } from "@/lib/data";
 import { createUserPost, getPostComposerEvents } from "@/lib/data";
 import { uploadMedia } from "@/lib/media";
 
@@ -70,6 +70,7 @@ export function PostComposer({
   const [eventId, setEventId] = useState("");
   const [caption, setCaption] = useState("");
   const [taggedPerson, setTaggedPerson] = useState("");
+  const [taggedUser, setTaggedUser] = useState<UserMentionSummary | null>(null);
   const [photos, setPhotos] = useState<PreviewPhoto[]>([]);
   const [loading, setLoading] = useState(false);
   const selectedEvent = options.find((option) => option.id === eventId);
@@ -113,6 +114,7 @@ export function PostComposer({
     setPhotos([]);
     setCaption("");
     setTaggedPerson("");
+    setTaggedUser(null);
     setEventId(options[0]?.id ?? "");
   }
 
@@ -242,6 +244,7 @@ export function PostComposer({
             caption,
             photoUrls,
             taggedPerson,
+            taggedUserId: taggedUser?.userId,
           },
         }),
         20000,
@@ -388,20 +391,14 @@ export function PostComposer({
                 />
               </label>
 
-              <label className="block">
-                <span className="text-xs font-black uppercase tracking-wide text-muted-foreground">
-                  Marcar pessoa opcional
-                </span>
-                <div className="mt-2 flex h-12 items-center gap-2 rounded-full bg-muted px-4">
-                  <UsersRound className="h-4 w-4 text-muted-foreground" />
-                  <input
-                    value={taggedPerson}
-                    onChange={(event) => setTaggedPerson(event.target.value)}
-                    placeholder="@amigo"
-                    className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-muted-foreground"
-                  />
-                </div>
-              </label>
+              <UserMentionPicker
+                currentUserId={userId}
+                label="Marcar pessoa opcional"
+                value={taggedPerson}
+                selectedUser={taggedUser}
+                onValueChange={setTaggedPerson}
+                onSelectedUserChange={setTaggedUser}
+              />
             </>
           )}
 

@@ -128,6 +128,7 @@ export interface NotificationSummary {
     | "venue_update"
     | "new_event"
     | "event_reminder"
+    | "post_mention"
     | "post_comment"
     | "group_activity"
     | "reward";
@@ -180,6 +181,7 @@ export interface FeedPostSummary {
   eventTitle?: string;
   caption: string;
   taggedPerson?: string;
+  taggedUserId?: string;
   photoUrls: string[];
   likes: number;
   comments: number;
@@ -276,6 +278,13 @@ export interface PostComposerEventOption {
   venueId: string;
   venueName: string;
   venueNeighborhood: string;
+}
+
+export interface UserMentionSummary {
+  userId: string;
+  username?: string;
+  displayName?: string;
+  avatarUrl?: string;
 }
 
 export interface LocationLookupResult {
@@ -379,6 +388,7 @@ type CreateUserPostInput = {
   caption: string;
   photoUrls: string[];
   taggedPerson?: string;
+  taggedUserId?: string;
 };
 
 type PostActionInput = {
@@ -389,6 +399,7 @@ type PostActionInput = {
 type UpdateUserPostInput = PostActionInput & {
   caption: string;
   taggedPerson?: string;
+  taggedUserId?: string;
 };
 
 type AddPostCommentInput = PostActionInput & {
@@ -592,12 +603,56 @@ function mapFeedPost(row: Record<string, unknown>, liked = false): FeedPostSumma
     eventTitle: row.event_title ? String(row.event_title) : undefined,
     caption: String(row.caption ?? ""),
     taggedPerson: row.tagged_person ? String(row.tagged_person) : undefined,
+    taggedUserId: row.tagged_user_id ? String(row.tagged_user_id) : undefined,
     photoUrls: Array.isArray(row.photo_urls) ? row.photo_urls.map(String) : [],
     likes: Number(row.likes ?? 0),
     comments: Number(row.comments ?? 0),
     liked: Boolean(row.liked ?? liked),
     createdAt: String(row.created_at),
   };
+}
+
+function mapUserMention(row: Record<string, unknown>): UserMentionSummary {
+  return {
+    userId: String(row.user_id),
+    username: row.username ? String(row.username) : undefined,
+    displayName: row.display_name ? String(row.display_name) : undefined,
+    avatarUrl: row.avatar_url ? String(row.avatar_url) : undefined,
+  };
+}
+
+function normalizeMentionQuery(value?: string) {
+  return (value ?? "")
+    .trim()
+    .replace(/^@+/, "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9._ ]/g, "")
+    .slice(0, 40);
+}
+
+function mentionDisplayName(user: UserMentionSummary) {
+  return user.username ? `@${user.username}` : (user.displayName ?? "").trim();
+}
+
+async function getMentionedUser(
+  sql: SqlClient,
+  taggedUserId: string | undefined,
+  authorUserId: string,
+) {
+  const userId = taggedUserId?.trim();
+  if (!userId || userId === authorUserId) return null;
+
+  const rows = await sql`
+    SELECT user_id, username, display_name, avatar_url
+    FROM public.user_profiles
+    WHERE user_id = ${userId}
+      AND account_type = 'explorer'
+    LIMIT 1
+  `;
+
+  return rows[0] ? mapUserMention(rows[0]) : null;
 }
 
 function mapAgendaReminder(row: Record<string, unknown>): AgendaReminderSummary {
@@ -947,8 +1002,23 @@ async function ensureGroupPlansSchema(_sql: SqlClient) {
   return;
 }
 
-async function ensurePostsSchema(_sql: SqlClient) {
-  return;
+let postsSchemaReady = false;
+
+async function ensurePostsSchema(sql: SqlClient) {
+  if (postsSchemaReady) return;
+
+  await sql`
+    ALTER TABLE public.user_posts
+    ADD COLUMN IF NOT EXISTS tagged_user_id text
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS user_posts_tagged_user_created_idx
+    ON public.user_posts (tagged_user_id, created_at DESC)
+    WHERE tagged_user_id IS NOT NULL
+  `;
+
+  postsSchemaReady = true;
 }
 
 async function ensureEventReviewsSchema(_sql: SqlClient) {
@@ -2040,6 +2110,7 @@ export const getFeedPosts = createServerFn({ method: "GET" })
         p.event_id,
         p.caption,
         p.tagged_person,
+        p.tagged_user_id,
         p.created_at,
         v.name AS venue_name,
         v.neighborhood,
@@ -2136,6 +2207,42 @@ export const getPostComposerEvents = createServerFn({ method: "GET" })
     }));
   });
 
+export const searchUserMentions = createServerFn({ method: "GET" })
+  .inputValidator((data: { userId?: string; query?: string }) => data)
+  .handler(async ({ data }): Promise<UserMentionSummary[]> => {
+    const userId = await getOptionalAuthenticatedUserId(data.userId);
+    if (!userId) return [];
+
+    const query = normalizeMentionQuery(data.query);
+    if (query.length < 2) return [];
+
+    const sql = await getSql();
+    if (!sql) return [];
+
+    const prefix = `${query}%`;
+    const contains = `%${query}%`;
+    const rows = await sql`
+      SELECT user_id, username, display_name, avatar_url
+      FROM public.user_profiles
+      WHERE user_id <> ${userId}
+        AND account_type = 'explorer'
+        AND (
+          translate(lower(COALESCE(username, '')), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') LIKE ${contains}
+          OR translate(lower(COALESCE(display_name, '')), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') LIKE ${contains}
+        )
+      ORDER BY
+        CASE
+          WHEN translate(lower(COALESCE(username, '')), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') LIKE ${prefix} THEN 0
+          WHEN translate(lower(COALESCE(display_name, '')), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') LIKE ${prefix} THEN 1
+          ELSE 2
+        END,
+        COALESCE(username, display_name) ASC
+      LIMIT 8
+    `;
+
+    return rows.map(mapUserMention);
+  });
+
 export const createUserPost = createServerFn({ method: "POST" })
   .inputValidator((data: CreateUserPostInput) => data)
   .handler(async ({ data }): Promise<FeedPostSummary> => {
@@ -2144,6 +2251,7 @@ export const createUserPost = createServerFn({ method: "POST" })
 
     const caption = data.caption.trim();
     const taggedPerson = data.taggedPerson?.trim();
+    const taggedUserId = data.taggedUserId?.trim();
     const photoUrls = data.photoUrls
       .map((url) => url.trim())
       .filter(Boolean)
@@ -2157,6 +2265,9 @@ export const createUserPost = createServerFn({ method: "POST" })
     await ensurePostsSchema(sql);
     await ensureEventsRecurrenceSchema(sql);
     await ensurePostAuthorProfile(sql, userId, data.authorName, data.authorAvatarUrl);
+    const mentionedUser = await getMentionedUser(sql, taggedUserId, userId);
+    const storedTaggedUserId = mentionedUser?.userId;
+    const storedTaggedPerson = mentionedUser ? mentionDisplayName(mentionedUser) : taggedPerson;
 
     const events = await sql`
       SELECT e.id, e.venue_id
@@ -2202,17 +2313,26 @@ export const createUserPost = createServerFn({ method: "POST" })
     if (!event) throw new Error("Faça check-in em um evento recente para postar.");
 
     const posts = await sql`
-      INSERT INTO public.user_posts (user_id, venue_id, event_id, caption, tagged_person)
+      INSERT INTO public.user_posts (user_id, venue_id, event_id, caption, tagged_person, tagged_user_id)
       VALUES (
         ${userId},
         ${String(event.venue_id)},
         ${data.eventId},
         ${caption},
-        ${taggedPerson || null}
+        ${storedTaggedPerson || null},
+        ${storedTaggedUserId ?? null}
       )
       RETURNING id
     `;
     const postId = String(posts[0].id);
+
+    await notifyTaggedUser(sql, {
+      postId,
+      authorUserId: userId,
+      taggedUserId: storedTaggedUserId,
+      authorName: data.authorName,
+      caption,
+    });
 
     for (const [position, mediaUrl] of photoUrls.entries()) {
       await sql`
@@ -2231,6 +2351,7 @@ export const createUserPost = createServerFn({ method: "POST" })
         p.event_id,
         p.caption,
         p.tagged_person,
+        p.tagged_user_id,
         p.created_at,
         v.name AS venue_name,
         v.neighborhood,
@@ -2261,15 +2382,20 @@ export const updateUserPost = createServerFn({ method: "POST" })
     const userId = await requireAuthenticatedUserId(data.userId);
     const caption = data.caption.trim();
     const taggedPerson = data.taggedPerson?.trim();
+    const taggedUserId = data.taggedUserId?.trim();
 
     const sql = await getSql();
     if (!sql) throw new Error("DATABASE_URL não configurada.");
     await ensurePostsSchema(sql);
+    const mentionedUser = await getMentionedUser(sql, taggedUserId, userId);
+    const storedTaggedUserId = mentionedUser?.userId;
+    const storedTaggedPerson = mentionedUser ? mentionDisplayName(mentionedUser) : taggedPerson;
 
     const existing = await sql`
       SELECT
         p.id,
         p.user_id,
+        p.tagged_user_id,
         COUNT(pm.id)::int AS photo_count
       FROM public.user_posts p
       LEFT JOIN public.user_post_media pm ON pm.post_id = p.id
@@ -2289,11 +2415,21 @@ export const updateUserPost = createServerFn({ method: "POST" })
       UPDATE public.user_posts
       SET
         caption = ${caption},
-        tagged_person = ${taggedPerson || null},
+        tagged_person = ${storedTaggedPerson || null},
+        tagged_user_id = ${storedTaggedUserId ?? null},
         updated_at = now()
       WHERE id = ${data.postId}
         AND user_id = ${userId}
     `;
+
+    if (storedTaggedUserId && storedTaggedUserId !== String(post.tagged_user_id ?? "")) {
+      await notifyTaggedUser(sql, {
+        postId: data.postId,
+        authorUserId: userId,
+        taggedUserId: storedTaggedUserId,
+        caption,
+      });
+    }
 
     const rows = await sql`
       SELECT
@@ -2305,6 +2441,7 @@ export const updateUserPost = createServerFn({ method: "POST" })
         p.event_id,
         p.caption,
         p.tagged_person,
+        p.tagged_user_id,
         p.created_at,
         v.name AS venue_name,
         v.neighborhood,
@@ -2373,6 +2510,56 @@ async function ensurePostAuthorProfile(
       display_name = COALESCE(EXCLUDED.display_name, public.user_profiles.display_name),
       avatar_url = COALESCE(EXCLUDED.avatar_url, public.user_profiles.avatar_url),
       updated_at = now()
+  `;
+}
+
+async function notifyTaggedUser(
+  sql: SqlClient,
+  {
+    postId,
+    authorUserId,
+    taggedUserId,
+    authorName,
+    caption,
+  }: {
+    postId: string;
+    authorUserId: string;
+    taggedUserId?: string;
+    authorName?: string;
+    caption: string;
+  },
+) {
+  if (!taggedUserId || taggedUserId === authorUserId) return;
+
+  await ensureNotificationsSchema(sql);
+
+  const authorRows = authorName?.trim()
+    ? []
+    : await sql`
+        SELECT COALESCE(username, display_name, 'Alguém') AS author_name
+        FROM public.user_profiles
+        WHERE user_id = ${authorUserId}
+        LIMIT 1
+      `;
+  const notificationAuthorName =
+    authorName?.trim() || String(authorRows[0]?.author_name ?? "Alguém");
+
+  await sql`
+    INSERT INTO public.notifications (
+      user_id, unique_key, type, title, body, target_type, target_id, route, created_at
+    )
+    VALUES (
+      ${taggedUserId},
+      ${`post_mention:${postId}:${taggedUserId}`},
+      'post_mention',
+      ${`${notificationAuthorName} marcou você em um post`},
+      ${caption.slice(0, 140)},
+      'post',
+      ${postId},
+      '/discover',
+      now()
+    )
+    ON CONFLICT (user_id, unique_key) DO NOTHING
   `;
 }
 

@@ -237,6 +237,7 @@ function NotificationItem({
 function notificationTypeLabel(type: NotificationSummary["type"]) {
   if (type === "event_reminder") return "Agenda";
   if (type === "new_event") return "Evento";
+  if (type === "post_mention") return "Menção";
   if (type === "post_comment") return "Comentário";
   if (type === "group_activity") return "Grupo";
   if (type === "reward") return "Recompensa";
