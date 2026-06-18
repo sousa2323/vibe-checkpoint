@@ -75,7 +75,10 @@ export type UserProfileSummary = {
   venueName?: string;
   businessRole?: string;
   neighborhood?: string;
+  venueApprovalStatus?: VenueApprovalStatus;
 };
+
+export type VenueApprovalStatus = "none" | "pending" | "approved" | "rejected";
 
 type SaveVenueClaimInput = SaveUserProfileInput & {
   venueName: string;
@@ -113,6 +116,8 @@ export type OwnerVenueOnboarding = {
   latitude?: number;
   longitude?: number;
   coverImageUrl?: string;
+  approvalStatus: VenueApprovalStatus;
+  reviewNote?: string;
 };
 
 export type UsernameAvailability = {
@@ -207,11 +212,18 @@ export const getUserProfile = createServerFn({ method: "GET" })
           up.username,
           up.avatar_url,
           up.onboarding_completed,
-          up.explorer_preferences,
+          ep.preferences AS private_explorer_preferences,
+          up.explorer_preferences AS legacy_explorer_preferences,
           COALESCE(v.name, vcr.venue_name) AS venue_name,
           vcr.business_role,
-          COALESCE(v.neighborhood, vcr.neighborhood) AS neighborhood
+          COALESCE(v.neighborhood, vcr.neighborhood) AS neighborhood,
+          CASE
+            WHEN v.id IS NOT NULL THEN 'approved'
+            WHEN vcr.status IS NOT NULL THEN vcr.status
+            ELSE 'none'
+          END AS venue_approval_status
         FROM public.user_profiles up
+        LEFT JOIN public.explorer_preferences ep ON ep.user_id = up.user_id
         LEFT JOIN LATERAL (
           SELECT name, neighborhood
           FROM public.venues
@@ -220,7 +232,7 @@ export const getUserProfile = createServerFn({ method: "GET" })
           LIMIT 1
         ) v ON true
         LEFT JOIN LATERAL (
-          SELECT venue_name, business_role, neighborhood
+          SELECT venue_name, business_role, neighborhood, status
           FROM public.venue_claim_requests
           WHERE user_id = up.user_id
           ORDER BY created_at DESC
@@ -240,10 +252,13 @@ export const getUserProfile = createServerFn({ method: "GET" })
         username: row.username ? String(row.username) : undefined,
         avatarUrl: row.avatar_url ? String(row.avatar_url) : undefined,
         onboardingCompleted: Boolean(row.onboarding_completed),
-        explorerPreferences: normalizeExplorerPreferences(row.explorer_preferences),
+        explorerPreferences: normalizeExplorerPreferences(
+          row.private_explorer_preferences ?? row.legacy_explorer_preferences,
+        ),
         venueName: row.venue_name ? String(row.venue_name) : undefined,
         businessRole: row.business_role ? String(row.business_role) : undefined,
         neighborhood: row.neighborhood ? String(row.neighborhood) : undefined,
+        venueApprovalStatus: normalizeVenueApprovalStatus(row.venue_approval_status),
       };
     } catch {
       return null;
@@ -319,13 +334,18 @@ export const getExplorerPreferences = createServerFn({ method: "GET" })
     await ensureUserProfileSchema(sql);
 
     const rows = await sql`
-      SELECT explorer_preferences
-      FROM public.user_profiles
-      WHERE user_id = ${userId}
+      SELECT
+        ep.preferences AS private_explorer_preferences,
+        up.explorer_preferences AS legacy_explorer_preferences
+      FROM public.user_profiles up
+      LEFT JOIN public.explorer_preferences ep ON ep.user_id = up.user_id
+      WHERE up.user_id = ${userId}
       LIMIT 1
     `;
 
-    return normalizeExplorerPreferences(rows[0]?.explorer_preferences);
+    return normalizeExplorerPreferences(
+      rows[0]?.private_explorer_preferences ?? rows[0]?.legacy_explorer_preferences,
+    );
   });
 
 export const getExplorerPreferenceOptions = createServerFn({ method: "GET" }).handler(
@@ -369,26 +389,38 @@ export const updateExplorerPreferences = createServerFn({ method: "POST" })
     if (!sql) throw new Error("DATABASE_URL não configurada.");
     await ensureUserProfileSchema(sql);
 
-    const rows = await sql`
+    await sql`
       INSERT INTO public.user_profiles (
         user_id,
         account_type,
-        onboarding_completed,
-        explorer_preferences
+        onboarding_completed
       )
       VALUES (
         ${userId},
         'explorer',
-        true,
+        true
+      )
+      ON CONFLICT (user_id) DO UPDATE SET
+        onboarding_completed = true,
+        updated_at = now()
+    `;
+
+    const rows = await sql`
+      INSERT INTO public.explorer_preferences (
+        user_id,
+        preferences
+      )
+      VALUES (
+        ${userId},
         ${JSON.stringify(preferences)}::jsonb
       )
       ON CONFLICT (user_id) DO UPDATE SET
-        explorer_preferences = EXCLUDED.explorer_preferences,
+        preferences = EXCLUDED.preferences,
         updated_at = now()
-      RETURNING explorer_preferences
+      RETURNING preferences
     `;
 
-    return normalizeExplorerPreferences(rows[0]?.explorer_preferences);
+    return normalizeExplorerPreferences(rows[0]?.preferences);
   });
 
 export const saveVenueClaimRequest = createServerFn({ method: "POST" })
@@ -478,7 +510,33 @@ export const getOwnerVenueForOnboarding = createServerFn({ method: "GET" })
       ORDER BY v.created_at ASC
       LIMIT 1
     `;
-    const row = rows[0];
+    let row = rows[0];
+    if (!row) {
+      const claimRows = await sql`
+        SELECT
+          venue_name AS name,
+          neighborhood,
+          city,
+          state,
+          address,
+          description,
+          category,
+          instagram,
+          whatsapp,
+          capacity,
+          latitude,
+          longitude,
+          cover_image_url,
+          business_role,
+          status,
+          review_note
+        FROM public.venue_claim_requests
+        WHERE user_id = ${userId}
+        ORDER BY updated_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
+      `;
+      row = claimRows[0];
+    }
     if (!row) return null;
 
     return {
@@ -496,6 +554,8 @@ export const getOwnerVenueForOnboarding = createServerFn({ method: "GET" })
       latitude: row.latitude == null ? undefined : Number(row.latitude),
       longitude: row.longitude == null ? undefined : Number(row.longitude),
       coverImageUrl: row.cover_image_url ? String(row.cover_image_url) : undefined,
+      approvalStatus: normalizeVenueApprovalStatus(row.status ?? "approved"),
+      reviewNote: row.review_note ? String(row.review_note) : undefined,
     };
   });
 
@@ -518,6 +578,116 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
         ? { latitude: data.latitude, longitude: data.longitude }
         : await geocodeVenueAddress(data);
 
+    const existing = await sql`
+      SELECT id, slug
+      FROM public.venues
+      WHERE owner_user_id = ${userId}
+      ORDER BY created_at ASC
+      LIMIT 1
+    `;
+
+    if (!existing[0]) {
+      await sql`
+        INSERT INTO public.user_profiles (
+          user_id,
+          account_type,
+          display_name,
+          onboarding_completed
+        )
+        VALUES (
+          ${userId},
+          'explorer',
+          ${data.displayName ?? null},
+          true
+        )
+        ON CONFLICT (user_id) DO UPDATE SET
+          display_name = COALESCE(EXCLUDED.display_name, public.user_profiles.display_name),
+          onboarding_completed = true,
+          updated_at = now()
+      `;
+
+      const latestClaim = await sql`
+        SELECT id
+        FROM public.venue_claim_requests
+        WHERE user_id = ${userId}
+        ORDER BY updated_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
+      `;
+
+      if (latestClaim[0]) {
+        await sql`
+          UPDATE public.venue_claim_requests
+          SET
+            venue_name = ${data.venueName.trim()},
+            business_role = ${data.businessRole.trim()},
+            phone = ${data.whatsapp?.trim() || null},
+            neighborhood = ${data.neighborhood?.trim() || "São Paulo"},
+            address = ${data.address?.trim() || null},
+            category = ${data.category?.trim() || null},
+            city = ${data.city?.trim() || "São Paulo"},
+            state = ${normalizeState(data.state)},
+            instagram = ${data.instagram?.trim() || null},
+            whatsapp = ${data.whatsapp?.trim() || null},
+            capacity = ${data.capacity || null},
+            description = ${data.description?.trim() || null},
+            latitude = ${coordinates?.latitude ?? null},
+            longitude = ${coordinates?.longitude ?? null},
+            cover_image_url = ${coverImageUrl},
+            status = 'pending',
+            review_note = NULL,
+            reviewed_by = NULL,
+            reviewed_at = NULL,
+            updated_at = now()
+          WHERE id = ${String(latestClaim[0].id)}
+        `;
+      } else {
+        await sql`
+          INSERT INTO public.venue_claim_requests (
+          user_id,
+          venue_name,
+          business_role,
+          phone,
+          neighborhood,
+          address,
+          category,
+          city,
+          state,
+          instagram,
+          whatsapp,
+          capacity,
+          description,
+          latitude,
+          longitude,
+          cover_image_url,
+          status,
+          updated_at
+        )
+        VALUES (
+          ${userId},
+          ${data.venueName.trim()},
+          ${data.businessRole.trim()},
+          ${data.whatsapp?.trim() || null},
+          ${data.neighborhood?.trim() || "São Paulo"},
+          ${data.address?.trim() || null},
+          ${data.category?.trim() || null},
+          ${data.city?.trim() || "São Paulo"},
+          ${normalizeState(data.state)},
+          ${data.instagram?.trim() || null},
+          ${data.whatsapp?.trim() || null},
+          ${data.capacity || null},
+          ${data.description?.trim() || null},
+          ${coordinates?.latitude ?? null},
+          ${coordinates?.longitude ?? null},
+          ${coverImageUrl},
+          'pending',
+          now()
+        )
+        `;
+      }
+
+      return { pendingApproval: true };
+    }
+
     await sql`
       INSERT INTO public.user_profiles (
         user_id,
@@ -536,14 +706,6 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
         display_name = COALESCE(EXCLUDED.display_name, public.user_profiles.display_name),
         onboarding_completed = true,
         updated_at = now()
-    `;
-
-    const existing = await sql`
-      SELECT id, slug
-      FROM public.venues
-      WHERE owner_user_id = ${userId}
-      ORDER BY created_at ASC
-      LIMIT 1
     `;
 
     if (existing[0]) {
@@ -637,7 +799,39 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
   });
 
 async function ensureVenueProfileSchema(_sql: Awaited<ReturnType<typeof getSql>>) {
-  return;
+  if (!_sql) return;
+  await ensureVenueApprovalSchema(_sql);
+}
+
+async function ensureVenueApprovalSchema(sql: NonNullable<Awaited<ReturnType<typeof getSql>>>) {
+  await sql`
+    ALTER TABLE public.venue_claim_requests
+    ADD COLUMN IF NOT EXISTS category text,
+    ADD COLUMN IF NOT EXISTS city text,
+    ADD COLUMN IF NOT EXISTS state text,
+    ADD COLUMN IF NOT EXISTS instagram text,
+    ADD COLUMN IF NOT EXISTS whatsapp text,
+    ADD COLUMN IF NOT EXISTS capacity integer,
+    ADD COLUMN IF NOT EXISTS description text,
+    ADD COLUMN IF NOT EXISTS latitude double precision,
+    ADD COLUMN IF NOT EXISTS longitude double precision,
+    ADD COLUMN IF NOT EXISTS cover_image_url text,
+    ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending',
+    ADD COLUMN IF NOT EXISTS review_note text,
+    ADD COLUMN IF NOT EXISTS reviewed_by text,
+    ADD COLUMN IF NOT EXISTS reviewed_at timestamptz,
+    ADD COLUMN IF NOT EXISTS approved_venue_id uuid REFERENCES public.venues(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS venue_claim_requests_status_created_idx
+      ON public.venue_claim_requests (status, created_at DESC)
+  `;
+}
+
+function normalizeVenueApprovalStatus(value: unknown): VenueApprovalStatus {
+  return value === "pending" || value === "approved" || value === "rejected" ? value : "none";
 }
 
 async function ensureUserProfileSchema(sql: Awaited<ReturnType<typeof getSql>>) {
@@ -645,6 +839,104 @@ async function ensureUserProfileSchema(sql: Awaited<ReturnType<typeof getSql>>) 
   await sql`
     ALTER TABLE public.user_profiles
     ADD COLUMN IF NOT EXISTS explorer_preferences jsonb NOT NULL DEFAULT '{}'::jsonb
+  `;
+
+  await ensureExplorerPreferencesSchema(sql);
+}
+
+async function ensureExplorerPreferencesSchema(
+  sql: NonNullable<Awaited<ReturnType<typeof getSql>>>,
+) {
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.explorer_preferences (
+      user_id text PRIMARY KEY,
+      preferences jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+
+  await sql`
+    INSERT INTO public.explorer_preferences (user_id, preferences, created_at, updated_at)
+    SELECT user_id, explorer_preferences, now(), now()
+    FROM public.user_profiles
+    WHERE explorer_preferences IS NOT NULL
+      AND explorer_preferences <> '{}'::jsonb
+    ON CONFLICT (user_id) DO NOTHING
+  `;
+
+  await sql`
+    UPDATE public.user_profiles
+    SET explorer_preferences = '{}'::jsonb,
+        updated_at = now()
+    WHERE explorer_preferences IS NOT NULL
+      AND explorer_preferences <> '{}'::jsonb
+  `;
+
+  await sql`
+    ALTER TABLE public.explorer_preferences ENABLE ROW LEVEL SECURITY
+  `;
+
+  await sql`
+    REVOKE ALL ON public.explorer_preferences FROM anon
+  `;
+
+  await sql`
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.explorer_preferences TO authenticated
+  `;
+
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'explorer_preferences'
+          AND policyname = 'Users can read own explorer preferences'
+      ) THEN
+        CREATE POLICY "Users can read own explorer preferences"
+          ON public.explorer_preferences FOR SELECT
+          TO authenticated
+          USING (user_id = auth.uid()::text);
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'explorer_preferences'
+          AND policyname = 'Users can insert own explorer preferences'
+      ) THEN
+        CREATE POLICY "Users can insert own explorer preferences"
+          ON public.explorer_preferences FOR INSERT
+          TO authenticated
+          WITH CHECK (user_id = auth.uid()::text);
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'explorer_preferences'
+          AND policyname = 'Users can update own explorer preferences'
+      ) THEN
+        CREATE POLICY "Users can update own explorer preferences"
+          ON public.explorer_preferences FOR UPDATE
+          TO authenticated
+          USING (user_id = auth.uid()::text)
+          WITH CHECK (user_id = auth.uid()::text);
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'explorer_preferences'
+          AND policyname = 'Users can delete own explorer preferences'
+      ) THEN
+        CREATE POLICY "Users can delete own explorer preferences"
+          ON public.explorer_preferences FOR DELETE
+          TO authenticated
+          USING (user_id = auth.uid()::text);
+      END IF;
+    END $$
   `;
 }
 

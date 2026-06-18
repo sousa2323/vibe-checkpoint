@@ -53,6 +53,10 @@ supabase/migrations/*
 !supabase/migrations/20260617123000_add_user_post_mentions.sql
 !supabase/migrations/20260617130000_secure_notifications_push_tokens.sql
 !supabase/migrations/20260617131000_revoke_public_sensitive_function_execute.sql
+!supabase/migrations/20260617132000_private_explorer_preferences.sql
+!supabase/migrations/20260617133000_pending_venue_owner_approval.sql
+!supabase/migrations/20260617134000_secure_group_plan_votes.sql
+!supabase/migrations/20260617135000_restrict_social_reads_to_authenticated.sql
 
 supabase/.temp/
 supabase/functions

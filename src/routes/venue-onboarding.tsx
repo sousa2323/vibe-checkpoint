@@ -163,6 +163,10 @@ function VenueOnboarding() {
   const [addressResult, setAddressResult] = useState<LocationLookupResult | null>(null);
   const [addressStatus, setAddressStatus] = useState<string | null>(null);
   const [checkingAddress, setCheckingAddress] = useState(false);
+  const [approvalStatus, setApprovalStatus] = useState<
+    "none" | "pending" | "approved" | "rejected"
+  >("none");
+  const [reviewNote, setReviewNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (isPending || user?.id) return;
@@ -193,6 +197,8 @@ function VenueOnboarding() {
         });
         setExistingCoverImageUrl(venue.coverImageUrl ?? null);
         setPreview(venue.coverImageUrl ?? null);
+        setApprovalStatus(venue.approvalStatus);
+        setReviewNote(venue.reviewNote ?? null);
 
         if (venue.latitude != null && venue.longitude != null) {
           const nextCoordinates = { latitude: venue.latitude, longitude: venue.longitude };
@@ -352,7 +358,7 @@ function VenueOnboarding() {
       if (!coverImageUrl) throw new Error("Envie uma imagem real do local.");
 
       setSavingMessage("Salvando estabelecimento...");
-      await withTimeout(
+      const result = await withTimeout(
         saveVenue({
           data: {
             userId: currentUser.id,
@@ -381,6 +387,11 @@ function VenueOnboarding() {
 
       setStatus("saved");
       setSavingMessage(null);
+      if ((result as { pendingApproval?: boolean }).pendingApproval) {
+        setApprovalStatus("pending");
+        setReviewNote(null);
+        return;
+      }
       setTimeout(() => navigate({ to: "/venue-dashboard" }), 700);
     } catch (cause) {
       setStatus("idle");
@@ -420,8 +431,23 @@ function VenueOnboarding() {
             Cadastre seu estabelecimento
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            Seu local será criado para aparecer no app, receber eventos e contatos.
+            Seu cadastro será enviado para análise. Após aprovação, o painel do estabelecimento será
+            liberado.
           </p>
+          {approvalStatus === "pending" ? (
+            <div className="mt-4 rounded-3xl border border-primary/25 bg-primary/10 p-4 text-sm font-semibold text-foreground">
+              Solicitação em análise. Você pode atualizar os dados abaixo enquanto aguarda a
+              aprovação.
+            </div>
+          ) : null}
+          {approvalStatus === "rejected" ? (
+            <div className="mt-4 rounded-3xl border border-border bg-card p-4 text-sm font-semibold text-foreground">
+              Solicitação recusada. Ajuste os dados e envie novamente.
+              {reviewNote ? (
+                <span className="mt-2 block text-muted-foreground">{reviewNote}</span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <form onSubmit={submit} className="mt-7 space-y-3 rounded-3xl border border-border p-4">
@@ -611,7 +637,9 @@ function VenueOnboarding() {
           {status === "saved" ? (
             <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <CheckCircle2 className="h-4 w-4 text-primary" />
-              Estabelecimento salvo. Abrindo painel...
+              {approvalStatus === "pending"
+                ? "Solicitação enviada para análise."
+                : "Estabelecimento salvo. Abrindo painel..."}
             </p>
           ) : null}
 
@@ -621,7 +649,11 @@ function VenueOnboarding() {
             className="w-full"
             disabled={status === "saving" || isPending}
           >
-            {status === "saving" ? savingMessage || "Salvando..." : "Finalizar cadastro"}
+            {status === "saving"
+              ? savingMessage || "Salvando..."
+              : approvalStatus === "pending"
+                ? "Atualizar solicitação"
+                : "Enviar para análise"}
           </PillButton>
         </form>
       </div>

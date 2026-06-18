@@ -1217,8 +1217,39 @@ async function materializeDueEventReminderNotifications(sql: SqlClient, userId: 
   `;
 }
 
-async function ensureGroupPlansSchema(_sql: SqlClient) {
-  return;
+let groupPlansSchemaReady = false;
+
+async function ensureGroupPlansSchema(sql: SqlClient) {
+  if (groupPlansSchemaReady) return;
+
+  await sql`ALTER TABLE public.group_plan_votes ENABLE ROW LEVEL SECURITY`;
+
+  await sql`DROP POLICY IF EXISTS "Public can insert group plan votes" ON public.group_plan_votes`;
+  await sql`DROP POLICY IF EXISTS "Public can read group plan votes" ON public.group_plan_votes`;
+
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'group_plan_votes'
+          AND policyname = 'Group creators can read votes'
+      ) THEN
+        CREATE POLICY "Group creators can read votes"
+          ON public.group_plan_votes FOR SELECT
+          TO authenticated
+          USING (
+            EXISTS (
+              SELECT 1 FROM public.group_plans gp
+              WHERE gp.id = group_id AND gp.creator_user_id = auth.uid()::text
+            )
+          );
+      END IF;
+    END $$
+  `;
+
+  groupPlansSchemaReady = true;
 }
 
 let postsSchemaReady = false;
@@ -2301,7 +2332,7 @@ export const getGroupPlan = createServerFn({ method: "GET" })
 export const voteGroupPlan = createServerFn({ method: "POST" })
   .inputValidator((data: VoteGroupPlanInput) => data)
   .handler(async ({ data }): Promise<GroupPlanSummary> => {
-    const voterKey = data.voterKey.trim();
+    const voterKey = normalizeGroupVoterKey(data.voterKey);
     if (!voterKey) throw new Error("Identifique seu voto.");
 
     const sql = await getSql();
@@ -2309,13 +2340,17 @@ export const voteGroupPlan = createServerFn({ method: "POST" })
     await ensureGroupPlansSchema(sql);
 
     const optionRows = await sql`
-      SELECT group_id
-      FROM public.group_plan_options
-      WHERE id = ${data.optionId}
-        AND group_id = ${data.groupId}
+      SELECT gp.id AS group_id, gp.status
+      FROM public.group_plans gp
+      JOIN public.group_plan_options gpo ON gpo.group_id = gp.id
+      WHERE gp.id = ${data.groupId}
+        AND gpo.id = ${data.optionId}
       LIMIT 1
     `;
     if (optionRows.length === 0) throw new Error("Opção de voto não encontrada.");
+    if (String(optionRows[0].status) !== "open") {
+      throw new Error("Essa votação já foi encerrada.");
+    }
 
     await sql`
       INSERT INTO public.group_plan_votes (group_id, option_id, voter_key, voter_name)
@@ -2323,7 +2358,7 @@ export const voteGroupPlan = createServerFn({ method: "POST" })
         ${data.groupId},
         ${data.optionId},
         ${voterKey.slice(0, 120)},
-        ${(data.voterName?.trim() || "Alguém no grupo").slice(0, 80)}
+        ${normalizeGroupVoterName(data.voterName)}
       )
       ON CONFLICT (group_id, voter_key) DO UPDATE SET
         option_id = EXCLUDED.option_id,
@@ -2335,6 +2370,18 @@ export const voteGroupPlan = createServerFn({ method: "POST" })
     if (!group) throw new Error("Rolê não encontrado.");
     return group;
   });
+
+function normalizeGroupVoterKey(value: string) {
+  const voterKey = value.trim().slice(0, 120);
+  if (/^user:[a-zA-Z0-9_-]{6,80}$/.test(voterKey)) return voterKey;
+  if (/^anonymous:[a-zA-Z0-9_-]{8,80}$/.test(voterKey)) return voterKey;
+  throw new Error("Identificação de voto inválida.");
+}
+
+function normalizeGroupVoterName(value?: string) {
+  const name = value?.trim().replace(/\s+/g, " ").slice(0, 80);
+  return name || "Alguém no grupo";
+}
 
 async function loadGroupPlan(sql: SqlClient, groupId: string, voterKey?: string) {
   const rows = await sql`

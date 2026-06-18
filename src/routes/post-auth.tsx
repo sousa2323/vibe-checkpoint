@@ -126,9 +126,9 @@ function PostAuth() {
           await saveProfile({
             data: {
               userId: currentUser.id,
-              accountType: "owner",
+              accountType: "explorer",
               displayName: authUserName,
-              onboardingCompleted: false,
+              onboardingCompleted: true,
             },
           });
         }

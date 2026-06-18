@@ -165,7 +165,7 @@ function Profile() {
         const nextProfile = await getProfile({ data: { userId: user.id } });
         if (cancelled) return;
 
-        if (metadataAccountType === "owner" && nextProfile?.accountType !== "owner") {
+        if (metadataAccountType === "owner" && !nextProfile) {
           navigate({ to: "/post-auth", replace: true });
           return;
         }

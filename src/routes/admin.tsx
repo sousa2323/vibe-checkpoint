@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
   CalendarDays,
+  CheckCircle2,
   Eye,
   History,
   LayoutDashboard,
@@ -32,6 +33,9 @@ import {
   type AdminUserSummary,
   type PrivacyRequestStatus,
   type PrivacyRequestSummary,
+  type VenueApprovalStatus,
+  type VenueApprovalSummary,
+  updateVenueApprovalStatus,
   updatePrivacyRequestStatus,
 } from "@/lib/admin-actions";
 import { requireAuthenticatedRoute } from "@/lib/route-guards";
@@ -42,11 +46,12 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type AdminTab = "overview" | "users" | "privacy" | "audit";
+type AdminTab = "overview" | "users" | "venues" | "privacy" | "audit";
 
 const tabs: Array<{ value: AdminTab; label: string; icon: LucideIcon }> = [
   { value: "overview", label: "Visão geral", icon: LayoutDashboard },
   { value: "users", label: "Usuários", icon: UsersRound },
+  { value: "venues", label: "Estabelecimentos", icon: Store },
   { value: "privacy", label: "LGPD", icon: ShieldCheck },
   { value: "audit", label: "Auditoria", icon: History },
 ];
@@ -67,6 +72,7 @@ function AdminPage() {
   const loadUserDetail = useServerFn(getAdminUserDetail);
   const loadAuditLogs = useServerFn(getAdminAuditLogs);
   const updatePrivacy = useServerFn(updatePrivacyRequestStatus);
+  const updateVenueApproval = useServerFn(updateVenueApprovalStatus);
   const [dashboard, setDashboard] = useState<AdminDashboard | null>(null);
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [auditLogs, setAuditLogs] = useState<AdminAuditLogSummary[]>([]);
@@ -87,7 +93,7 @@ function AdminPage() {
         const nextDashboard = await loadDashboard({ data: { userId } });
         setDashboard(nextDashboard);
         setAuditLogs(nextDashboard.auditLogs);
-        setNotes(notesFromPrivacy(nextDashboard.privacyRequests));
+        setNotes(notesFromDashboard(nextDashboard));
         setLoadState("ready");
       } catch (cause) {
         const message =
@@ -191,6 +197,53 @@ function AdminPage() {
     } catch (cause) {
       const message =
         cause instanceof Error ? cause.message : "Não foi possível atualizar o pedido.";
+      toast.error(message);
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function changeVenueApprovalStatus(
+    request: VenueApprovalSummary,
+    status: VenueApprovalStatus,
+  ) {
+    if (!user?.id || savingId) return;
+    setSavingId(request.id);
+    try {
+      const updated = await updateVenueApproval({
+        data: {
+          userId: user.id,
+          requestId: request.id,
+          status,
+          internalNote: notes[request.id],
+        },
+      });
+      setDashboard((current) =>
+        current
+          ? {
+              ...current,
+              metrics: {
+                ...current.metrics,
+                venueApprovalsPending: current.venueApprovals.filter((item) =>
+                  item.id === updated.id ? updated.status === "pending" : item.status === "pending",
+                ).length,
+                venues:
+                  status === "approved" && request.status !== "approved"
+                    ? current.metrics.venues + 1
+                    : current.metrics.venues,
+              },
+              venueApprovals: current.venueApprovals.map((item) =>
+                item.id === updated.id ? updated : item,
+              ),
+            }
+          : current,
+      );
+      setNotes((current) => ({ ...current, [updated.id]: updated.reviewNote ?? "" }));
+      void refreshAuditLogs(user.id);
+      toast.success(status === "approved" ? "Estabelecimento aprovado." : "Solicitação recusada.");
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : "Não foi possível atualizar a solicitação.";
       toast.error(message);
     } finally {
       setSavingId(null);
@@ -309,6 +362,11 @@ function AdminPage() {
                   {dashboard.metrics.privacyPending}
                 </span>
               ) : null}
+              {tab.value === "venues" && dashboard.metrics.venueApprovalsPending > 0 ? (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-black text-white">
+                  {dashboard.metrics.venueApprovalsPending}
+                </span>
+              ) : null}
             </button>
           ))}
         </nav>
@@ -328,6 +386,17 @@ function AdminPage() {
             onSearch={() => void refreshUsers()}
             onOpenUser={(userId) => void openUserDetail(userId)}
             onCloseDetail={() => setSelectedUser(null)}
+          />
+        ) : null}
+
+        {activeTab === "venues" ? (
+          <VenueApprovalsTab
+            requests={dashboard.venueApprovals}
+            notes={notes}
+            savingId={savingId}
+            onRefresh={() => void refreshDashboard()}
+            onNoteChange={(id, note) => setNotes((current) => ({ ...current, [id]: note }))}
+            onStatusChange={(request, status) => void changeVenueApprovalStatus(request, status)}
           />
         ) : null}
 
@@ -359,10 +428,16 @@ function OverviewTab({
 }) {
   return (
     <div className="mt-5 space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard icon={<UsersRound />} label="Usuários" value={dashboard.metrics.users} />
         <MetricCard icon={<Store />} label="Estabelecimentos" value={dashboard.metrics.venues} />
         <MetricCard icon={<CalendarDays />} label="Eventos" value={dashboard.metrics.events} />
+        <MetricCard
+          icon={<CheckCircle2 />}
+          label="Estab. pendentes"
+          value={dashboard.metrics.venueApprovalsPending}
+          signal
+        />
         <MetricCard
           icon={<ShieldCheck />}
           label="LGPD pendentes"
@@ -693,6 +768,164 @@ function PrivacyTab({
   );
 }
 
+function VenueApprovalsTab({
+  requests,
+  notes,
+  savingId,
+  onRefresh,
+  onNoteChange,
+  onStatusChange,
+}: {
+  requests: VenueApprovalSummary[];
+  notes: Record<string, string>;
+  savingId: string | null;
+  onRefresh: () => void;
+  onNoteChange: (id: string, note: string) => void;
+  onStatusChange: (request: VenueApprovalSummary, status: VenueApprovalStatus) => void;
+}) {
+  return (
+    <section className="mt-5 rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <SectionHeader
+          title="Estabelecimentos"
+          description="Aprove solicitações reais antes de liberar painel, eventos e recompensas."
+        />
+        <button
+          type="button"
+          className="h-10 rounded-full bg-muted px-4 text-sm font-black text-foreground"
+          onClick={onRefresh}
+        >
+          Atualizar
+        </button>
+      </div>
+
+      {requests.length ? (
+        <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          {requests.map((request) => (
+            <VenueApprovalCard
+              key={request.id}
+              request={request}
+              note={notes[request.id] ?? request.reviewNote ?? ""}
+              saving={savingId === request.id}
+              onNoteChange={(note) => onNoteChange(request.id, note)}
+              onStatusChange={(status) => onStatusChange(request, status)}
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptyBlock text="Nenhuma solicitação de estabelecimento." />
+      )}
+    </section>
+  );
+}
+
+function VenueApprovalCard({
+  request,
+  note,
+  saving,
+  onNoteChange,
+  onStatusChange,
+}: {
+  request: VenueApprovalSummary;
+  note: string;
+  saving: boolean;
+  onNoteChange: (note: string) => void;
+  onStatusChange: (status: VenueApprovalStatus) => void;
+}) {
+  const requester = request.requesterName ?? request.requesterEmail ?? "Usuário sem nome";
+  const location = [request.neighborhood, request.city, request.state].filter(Boolean).join(" · ");
+  const canApprove = request.status !== "approved";
+  const canReject = request.status !== "rejected";
+
+  return (
+    <article className="overflow-hidden rounded-3xl border border-border bg-background shadow-sm">
+      {request.coverImageUrl ? (
+        <img src={request.coverImageUrl} alt="" className="h-44 w-full object-cover" />
+      ) : (
+        <div className="flex h-44 w-full items-center justify-center bg-muted text-muted-foreground">
+          <Store className="h-8 w-8" />
+        </div>
+      )}
+
+      <div className="space-y-4 p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <VenueStatusBadge status={request.status} />
+              <span className="text-xs font-semibold text-muted-foreground">
+                {formatDate(request.createdAt)}
+              </span>
+            </div>
+            <h3 className="mt-2 text-xl font-black tracking-tight">{request.venueName}</h3>
+            <p className="mt-1 text-sm font-semibold text-muted-foreground">
+              {request.businessRole} · {requester}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-2 text-sm font-semibold text-muted-foreground sm:grid-cols-2">
+          <InfoLine label="Categoria" value={request.category} />
+          <InfoLine label="Local" value={location || null} />
+          <InfoLine label="Endereço" value={request.address} />
+          <InfoLine label="WhatsApp" value={request.whatsapp} />
+          <InfoLine label="Instagram" value={request.instagram} />
+          <InfoLine label="Capacidade" value={request.capacity ? String(request.capacity) : null} />
+        </div>
+
+        {request.description ? (
+          <p className="rounded-2xl bg-muted p-3 text-sm font-semibold leading-relaxed text-muted-foreground">
+            {request.description}
+          </p>
+        ) : null}
+
+        <label className="block">
+          <span className="text-xs font-black text-muted-foreground">Nota para o solicitante</span>
+          <textarea
+            value={note}
+            onChange={(event) => onNoteChange(event.target.value)}
+            placeholder="Explique o motivo se recusar ou registre uma observação interna."
+            className="mt-2 min-h-20 w-full resize-none rounded-2xl border border-border bg-card px-3 py-2 text-sm outline-none ring-primary/25 transition focus:ring-4"
+          />
+        </label>
+
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            disabled={saving || !canApprove}
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 text-sm font-black text-white transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => onStatusChange("approved")}
+          >
+            {saving ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4" />
+            )}
+            Aprovar
+          </button>
+          <button
+            type="button"
+            disabled={saving || !canReject}
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full border border-border px-4 text-sm font-black text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => onStatusChange("rejected")}
+          >
+            {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+            Recusar
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function InfoLine({ label, value }: { label: string; value: string | null }) {
+  return (
+    <p className="min-w-0 rounded-2xl bg-muted px-3 py-2">
+      <span className="block text-[11px] font-black text-muted-foreground/80">{label}</span>
+      <span className="mt-0.5 block truncate text-foreground">{value || "Não informado"}</span>
+    </p>
+  );
+}
+
 function AuditTab({ logs, onRefresh }: { logs: AdminAuditLogSummary[]; onRefresh: () => void }) {
   return (
     <section className="mt-5 rounded-[2rem] border border-border bg-card p-4 shadow-sm sm:p-5">
@@ -936,6 +1169,25 @@ function StatusBadge({ status }: { status: PrivacyRequestStatus }) {
   );
 }
 
+function VenueStatusBadge({ status }: { status: VenueApprovalStatus }) {
+  const label = venueApprovalStatusLabel(status);
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-black",
+        status === "pending" ? "bg-primary/10 text-primary" : undefined,
+        status === "approved"
+          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+          : undefined,
+        status === "rejected" ? "bg-muted text-muted-foreground" : undefined,
+      )}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {label}
+    </span>
+  );
+}
+
 function EmptyBlock({ text }: { text: string }) {
   return (
     <p className="rounded-3xl border border-dashed border-border p-6 text-center text-sm font-semibold text-muted-foreground">
@@ -952,12 +1204,25 @@ function initialsOf(name: string | null, email: string | null) {
   return source.slice(0, 2).toUpperCase();
 }
 
+function notesFromDashboard(dashboard: AdminDashboard) {
+  return {
+    ...notesFromPrivacy(dashboard.privacyRequests),
+    ...notesFromVenueApprovals(dashboard.venueApprovals),
+  };
+}
+
 function notesFromPrivacy(requests: PrivacyRequestSummary[]) {
   return Object.fromEntries(requests.map((request) => [request.id, request.internalNote ?? ""]));
 }
 
+function notesFromVenueApprovals(requests: VenueApprovalSummary[]) {
+  return Object.fromEntries(requests.map((request) => [request.id, request.reviewNote ?? ""]));
+}
+
 function translateAuditAction(action: string) {
   if (action === "privacy_request_status_updated") return "Pedido LGPD atualizado";
+  if (action === "venue_approval_approved") return "Estabelecimento aprovado";
+  if (action === "venue_approval_rejected") return "Estabelecimento recusado";
   if (action === "user_detail_opened") return "Detalhe de usuário aberto";
   return action;
 }
@@ -969,13 +1234,26 @@ function formatAuditSentence(log: AdminAuditLogSummary) {
   if (log.action === "privacy_request_status_updated") {
     return `${admin} atualizou um pedido LGPD${log.entityLabel ? ` de ${log.entityLabel}` : ""}.`;
   }
+  if (log.action === "venue_approval_approved") {
+    return `${admin} aprovou uma solicitação de estabelecimento.`;
+  }
+  if (log.action === "venue_approval_rejected") {
+    return `${admin} recusou uma solicitação de estabelecimento.`;
+  }
   return `${admin} realizou uma ação em ${target}.`;
 }
 
 function humanEntityName(entityType: string) {
   if (entityType === "user") return "um usuário";
   if (entityType === "privacy_request") return "um pedido LGPD";
+  if (entityType === "venue_claim_request") return "uma solicitação de estabelecimento";
   return "um registro";
+}
+
+function venueApprovalStatusLabel(status: VenueApprovalStatus) {
+  if (status === "approved") return "Aprovado";
+  if (status === "rejected") return "Recusado";
+  return "Pendente";
 }
 
 function formatDate(value: string | null) {
