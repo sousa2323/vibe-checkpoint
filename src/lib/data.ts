@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getSql, type SqlClient, uniqueSlug } from "./db";
+import { getSql, type SqlClient, uniqueSlug, withSqlTransaction } from "./db";
 import {
   EVENT_ACTIVE_WINDOW_HOURS,
   EVENT_POST_WINDOW_HOURS,
@@ -2604,6 +2604,7 @@ export const createUserPost = createServerFn({ method: "POST" })
     const storedTaggedPerson = firstMentionedUser
       ? mentionDisplayName(firstMentionedUser)
       : taggedPerson;
+    if (mentionedUsers.length > 0) await ensureNotificationsSchema(sql);
 
     const events = await sql`
       SELECT e.id, e.venue_id
@@ -2648,35 +2649,39 @@ export const createUserPost = createServerFn({ method: "POST" })
     const event = events[0];
     if (!event) throw new Error("Faça check-in em um evento recente para postar.");
 
-    const posts = await sql`
-      INSERT INTO public.user_posts (user_id, venue_id, event_id, caption, tagged_person, tagged_user_id)
-      VALUES (
-        ${userId},
-        ${String(event.venue_id)},
-        ${data.eventId},
-        ${caption},
-        ${storedTaggedPerson || null},
-        ${storedTaggedUserId ?? null}
-      )
-      RETURNING id
-    `;
-    const postId = String(posts[0].id);
-
-    await syncPostMentions(sql, postId, mentionedUsers);
-    await notifyTaggedUsers(sql, {
-      postId,
-      authorUserId: userId,
-      taggedUsers: mentionedUsers,
-      authorName: data.authorName,
-      caption,
-    });
-
-    for (const [position, mediaUrl] of photoUrls.entries()) {
-      await sql`
-        INSERT INTO public.user_post_media (post_id, media_url, position)
-        VALUES (${postId}, ${mediaUrl}, ${position})
+    const postId = await withSqlTransaction(async (txSql) => {
+      const posts = await txSql`
+        INSERT INTO public.user_posts (user_id, venue_id, event_id, caption, tagged_person, tagged_user_id)
+        VALUES (
+          ${userId},
+          ${String(event.venue_id)},
+          ${data.eventId},
+          ${caption},
+          ${storedTaggedPerson || null},
+          ${storedTaggedUserId ?? null}
+        )
+        RETURNING id
       `;
-    }
+      const nextPostId = String(posts[0].id);
+
+      await syncPostMentions(txSql, nextPostId, mentionedUsers);
+      await notifyTaggedUsers(txSql, {
+        postId: nextPostId,
+        authorUserId: userId,
+        taggedUsers: mentionedUsers,
+        authorName: data.authorName,
+        caption,
+      });
+
+      for (const [position, mediaUrl] of photoUrls.entries()) {
+        await txSql`
+          INSERT INTO public.user_post_media (post_id, media_url, position)
+          VALUES (${nextPostId}, ${mediaUrl}, ${position})
+        `;
+      }
+
+      return nextPostId;
+    });
 
     const rows = await sql`
       SELECT

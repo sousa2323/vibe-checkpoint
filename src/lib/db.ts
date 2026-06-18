@@ -1,3 +1,5 @@
+import type { Pool, PoolClient } from "pg";
+
 export function getDatabaseUrl() {
   if (typeof process === "undefined") return undefined;
   return process.env.DATABASE_URL;
@@ -20,19 +22,20 @@ type TaggedSql = (
 ) => Promise<Record<string, unknown>[]>;
 
 let cachedSql: TaggedSql | null = null;
+let cachedPool: Pool | null = null;
 
 function readPositiveInteger(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-export async function getSql() {
+async function getPool() {
   const databaseUrl = getDatabaseUrl();
   if (!databaseUrl) return null;
-  if (cachedSql) return cachedSql;
+  if (cachedPool) return cachedPool;
 
   const { Pool } = await import("pg");
-  const pool = new Pool({
+  cachedPool = new Pool({
     connectionString: databaseUrl,
     max: 5,
     connectionTimeoutMillis: readPositiveInteger(process.env.DATABASE_CONNECTION_TIMEOUT_MS, 10000),
@@ -41,20 +44,49 @@ export async function getSql() {
     ssl: databaseUrl.includes("sslmode=disable") ? undefined : { rejectUnauthorized: false },
   });
 
-  cachedSql = async (strings, ...values) => {
+  return cachedPool;
+}
+
+function createTaggedSql(executor: Pick<Pool | PoolClient, "query">): TaggedSql {
+  return async (strings, ...values) => {
     const text = strings.reduce((query, part, index) => {
       const placeholder = index < values.length ? `$${index + 1}` : "";
       return `${query}${part}${placeholder}`;
     }, "");
 
-    const result = await pool.query(text, values);
+    const result = await executor.query(text, values);
     return result.rows;
   };
+}
+
+export async function getSql() {
+  const pool = await getPool();
+  if (!pool) return null;
+  if (!cachedSql) cachedSql = createTaggedSql(pool);
 
   return cachedSql;
 }
 
 export type SqlClient = NonNullable<Awaited<ReturnType<typeof getSql>>>;
+
+export async function withSqlTransaction<T>(callback: (sql: SqlClient) => Promise<T>) {
+  const pool = await getPool();
+  if (!pool) throw new Error("DATABASE_URL não configurada.");
+
+  const client = await pool.connect();
+  const sql = createTaggedSql(client);
+  try {
+    await client.query("BEGIN");
+    const result = await callback(sql);
+    await client.query("COMMIT");
+    return result;
+  } catch (cause) {
+    await client.query("ROLLBACK");
+    throw cause;
+  } finally {
+    client.release();
+  }
+}
 
 export function slugify(value: string) {
   return value

@@ -321,7 +321,9 @@ function Discover() {
     const term = normalizeSearch(search);
     return posts
       .map((post) => enrichPostDistance(post, location))
-      .filter((post) => isWithinRadius(post.distanceKm, location, radiusKm))
+      .filter(
+        (post) => post.userId === user?.id || isWithinRadius(post.distanceKm, location, radiusKm),
+      )
       .filter((post) => {
         if (!term || matchedCategory(term)) return true;
         return [
@@ -334,7 +336,7 @@ function Discover() {
         ].some((value) => normalizeSearch(value ?? "").includes(term));
       })
       .sort((a, b) => feedTime(b) - feedTime(a));
-  }, [location, posts, radiusKm, search]);
+  }, [location, posts, radiusKm, search, user?.id]);
 
   const feedItems = useMemo(() => {
     const eventItems = filteredEvents.map((event) => ({
@@ -788,7 +790,9 @@ function Discover() {
         userName={getAuthUserName(user)}
         userAvatarUrl={getUserImage(user)}
         onOpenChange={setComposerOpen}
-        onCreated={(post) => setPosts((current) => [post, ...current])}
+        onCreated={(post) =>
+          setPosts((current) => [post, ...current.filter((item) => item.id !== post.id)])
+        }
         onRequireAuth={() => navigate({ to: "/auth" })}
         onStatus={setStatus}
       />
