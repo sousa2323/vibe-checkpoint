@@ -18,12 +18,32 @@ import {
 import { canEventAcceptExplorerActions } from "@/lib/event-time";
 import { buildVenueShareText, getCheckinReward } from "@/lib/growth";
 import { venueDetailsQuery } from "@/lib/queries";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/venues/$venueId")({
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData(venueDetailsQuery(params.venueId)),
+  pendingComponent: VenueDetailPending,
   component: VenueDetailPage,
 });
+
+function VenueDetailPending() {
+  return (
+    <main className="app-shell bg-background pb-32">
+      <Skeleton className="h-80 w-full rounded-none" />
+      <div className="space-y-5 px-6 pt-6">
+        <Skeleton className="h-8 w-2/3 rounded-lg" />
+        <Skeleton className="h-4 w-1/2 rounded-md" />
+        <div className="grid grid-cols-2 gap-3">
+          <Skeleton className="h-12 rounded-full" />
+          <Skeleton className="h-12 rounded-full" />
+        </div>
+        <Skeleton className="h-44 w-full rounded-2xl" />
+        <Skeleton className="h-44 w-full rounded-2xl" />
+      </div>
+    </main>
+  );
+}
 
 function VenueDetailPage() {
   const initialDetail = Route.useLoaderData();

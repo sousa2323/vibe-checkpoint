@@ -24,6 +24,7 @@ export function BottomNav({ onFabClick }: { onFabClick?: () => void }) {
             <Link
               key={to}
               to={to}
+              preload="viewport"
               className={cn(
                 "flex flex-col items-center gap-0.5 text-[10px] transition-colors",
                 active ? "text-white" : "text-white/50",
@@ -43,6 +44,7 @@ export function BottomNav({ onFabClick }: { onFabClick?: () => void }) {
             <Link
               key={to}
               to={to}
+              preload="viewport"
               className={cn(
                 "flex flex-col items-center gap-0.5 text-[10px] transition-colors",
                 active ? "text-white" : "text-white/50",

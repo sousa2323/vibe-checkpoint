@@ -36,12 +36,32 @@ import {
   getRewardMeta,
 } from "@/lib/growth";
 import { eventDetailsQuery } from "@/lib/queries";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/events/$eventId")({
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData(eventDetailsQuery(params.eventId)),
+  pendingComponent: EventDetailPending,
   component: EventDetailPage,
 });
+
+function EventDetailPending() {
+  return (
+    <main className="app-shell bg-background pb-32">
+      <Skeleton className="h-80 w-full rounded-none" />
+      <div className="space-y-5 px-6 pt-6">
+        <Skeleton className="h-8 w-3/4 rounded-lg" />
+        <Skeleton className="h-4 w-1/2 rounded-md" />
+        <div className="grid grid-cols-2 gap-3">
+          <Skeleton className="h-12 rounded-full" />
+          <Skeleton className="h-12 rounded-full" />
+        </div>
+        <Skeleton className="h-12 w-full rounded-full" />
+        <Skeleton className="h-32 w-full rounded-2xl" />
+      </div>
+    </main>
+  );
+}
 
 function EventDetailPage() {
   const initialEvent = Route.useLoaderData();
