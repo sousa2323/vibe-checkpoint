@@ -276,9 +276,9 @@ export function PostComposer({
           {options.length === 0 ? (
             <div className="rounded-3xl bg-muted p-5 text-center">
               <CheckCircle2 className="mx-auto h-8 w-8 text-primary" />
-              <p className="mt-3 font-black">Nenhum evento recente para postar</p>
+              <p className="mt-3 font-black">Nenhum evento acontecendo agora para postar</p>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                Faça check-in durante o evento para publicar enquanto o rolê ainda está recente.
+                Faça check-in e publique somente enquanto o evento estiver rolando.
               </p>
             </div>
           ) : (

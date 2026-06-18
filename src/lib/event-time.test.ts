@@ -46,6 +46,14 @@ describe("canEventAcceptPosts", () => {
     expect(canEventAcceptPosts(startsAt, now)).toBe(false);
   });
 
+  it("rejects posts until the exact event start", () => {
+    const startsAt = "2026-06-02T20:00:00.000Z";
+    const startsAtTime = new Date(startsAt).getTime();
+
+    expect(canEventAcceptPosts(startsAt, startsAtTime - 1)).toBe(false);
+    expect(canEventAcceptPosts(startsAt, startsAtTime)).toBe(true);
+  });
+
   it("rejects posts after the post window closes", () => {
     const startsAt = "2026-06-02T20:00:00.000Z";
     const now = new Date(startsAt).getTime() + EVENT_POST_WINDOW_HOURS * hourMs;

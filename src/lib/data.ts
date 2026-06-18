@@ -2489,7 +2489,8 @@ export const getPostComposerEvents = createServerFn({ method: "GET" })
         e.title,
         e.venue_id,
         v.name AS venue_name,
-        v.neighborhood
+        v.neighborhood,
+        occurrence.starts_at
       FROM public.checkins c
       JOIN public.events e ON e.id = c.event_id
       JOIN public.venues v ON v.id = e.venue_id
@@ -2511,7 +2512,7 @@ export const getPostComposerEvents = createServerFn({ method: "GET" })
                 + e.recurrence_time
                 + interval '7 days') AT TIME ZONE 'America/Sao_Paulo'
             END
-          ELSE e.starts_at
+          ELSE (e.starts_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo'
         END AS starts_at
       ) occurrence
       WHERE c.user_id = ${userId}
@@ -2526,7 +2527,7 @@ export const getPostComposerEvents = createServerFn({ method: "GET" })
             AND c.occurrence_starts_at < occurrence.starts_at + interval '1 minute'
           )
         )
-      ORDER BY e.title ASC
+      ORDER BY occurrence.starts_at DESC, e.title ASC
     `;
 
     return rows.map((row) => ({
@@ -2626,7 +2627,7 @@ export const createUserPost = createServerFn({ method: "POST" })
                 + e.recurrence_time
                 + interval '7 days') AT TIME ZONE 'America/Sao_Paulo'
             END
-          ELSE e.starts_at
+          ELSE (e.starts_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo'
         END AS starts_at
       ) occurrence
       WHERE c.user_id = ${userId}
