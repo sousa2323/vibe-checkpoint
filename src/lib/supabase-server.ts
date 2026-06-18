@@ -24,14 +24,22 @@ export function getSupabaseServerClient() {
   });
 }
 
+let mediaBucketReady = false;
+
 export async function ensureMediaBucket() {
+  // Evita um getBucket no Supabase a cada upload depois que o bucket já existe.
+  if (mediaBucketReady) return mediaBucketName;
+
   const supabase = getSupabaseServerClient();
   const { data: bucket } = await withTimeout(
     supabase.storage.getBucket(mediaBucketName),
     10000,
     timeoutMessage("preparar o envio de imagem"),
   );
-  if (bucket) return mediaBucketName;
+  if (bucket) {
+    mediaBucketReady = true;
+    return mediaBucketName;
+  }
 
   const { error } = await withTimeout(
     supabase.storage.createBucket(mediaBucketName, {
@@ -47,6 +55,7 @@ export async function ensureMediaBucket() {
     throw error;
   }
 
+  mediaBucketReady = true;
   return mediaBucketName;
 }
 

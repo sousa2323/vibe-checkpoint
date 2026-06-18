@@ -230,20 +230,15 @@ export function PostComposer({
     loadingRef.current = true;
     setLoading(true);
     try {
-      if (photos.length > 0) onStatus("Preparando fotos...");
-      const optimizedPhotos = await Promise.all(
-        photos.map((photo) =>
-          withClientTimeout(
+      // Cada foto otimiza e envia em sequência, mas todas em paralelo entre si:
+      // o upload de uma começa enquanto outra ainda está sendo otimizada.
+      const photoUrls = await Promise.all(
+        photos.map(async (photo) => {
+          const optimizedPhoto = await withClientTimeout(
             optimizeImageForUpload(photo.file),
             15000,
             "Tempo esgotado ao preparar a imagem. Tente outra foto.",
-          ),
-        ),
-      );
-
-      if (optimizedPhotos.length > 0) onStatus("Enviando fotos...");
-      const photoUrls = await Promise.all(
-        optimizedPhotos.map(async (optimizedPhoto) => {
+          );
           const base64 = await fileToBase64(optimizedPhoto);
           const result = await withClientTimeout(
             upload({
@@ -256,7 +251,6 @@ export function PostComposer({
         }),
       );
 
-      onStatus("Publicando...");
       const post = await withClientTimeout(
         createPost({
           data: {
@@ -445,7 +439,7 @@ export function PostComposer({
             ) : (
               <CameraIcon className="h-4 w-4" />
             )}
-            Publicar agora
+            {loading ? "Publicando..." : "Publicar agora"}
           </button>
         </div>
       </DialogContent>
