@@ -1295,6 +1295,43 @@ async function ensurePostsSchema(sql: SqlClient) {
   `;
 
   await sql`
+    DROP POLICY IF EXISTS "Public can read post mentions" ON public.user_post_mentions
+  `;
+
+  await sql`
+    DROP POLICY IF EXISTS "Authenticated users can read post mentions" ON public.user_post_mentions
+  `;
+
+  await sql`
+    DROP POLICY IF EXISTS "Post authors can manage mentions" ON public.user_post_mentions
+  `;
+
+  await sql`
+    CREATE POLICY "Authenticated users can read post mentions"
+    ON public.user_post_mentions FOR SELECT
+    TO authenticated
+    USING (true)
+  `;
+
+  await sql`
+    CREATE POLICY "Post authors can manage mentions"
+    ON public.user_post_mentions FOR ALL
+    TO authenticated
+    USING (
+      EXISTS (
+        SELECT 1 FROM public.user_posts p
+        WHERE p.id = post_id AND p.user_id = auth.uid()::text
+      )
+    )
+    WITH CHECK (
+      EXISTS (
+        SELECT 1 FROM public.user_posts p
+        WHERE p.id = post_id AND p.user_id = auth.uid()::text
+      )
+    )
+  `;
+
+  await sql`
     INSERT INTO public.user_post_mentions (post_id, user_id, display_label, position)
     SELECT
       p.id,
@@ -2664,15 +2701,6 @@ export const createUserPost = createServerFn({ method: "POST" })
       `;
       const nextPostId = String(posts[0].id);
 
-      await syncPostMentions(txSql, nextPostId, mentionedUsers);
-      await notifyTaggedUsers(txSql, {
-        postId: nextPostId,
-        authorUserId: userId,
-        taggedUsers: mentionedUsers,
-        authorName: data.authorName,
-        caption,
-      });
-
       for (const [position, mediaUrl] of photoUrls.entries()) {
         await txSql`
           INSERT INTO public.user_post_media (post_id, media_url, position)
@@ -2682,6 +2710,21 @@ export const createUserPost = createServerFn({ method: "POST" })
 
       return nextPostId;
     });
+
+    if (mentionedUsers.length > 0) {
+      try {
+        await syncPostMentions(sql, postId, mentionedUsers);
+        await notifyTaggedUsers(sql, {
+          postId,
+          authorUserId: userId,
+          taggedUsers: mentionedUsers,
+          authorName: data.authorName,
+          caption,
+        });
+      } catch (cause) {
+        console.error("Não foi possível sincronizar marcações do post", cause);
+      }
+    }
 
     const rows = await sql`
       SELECT

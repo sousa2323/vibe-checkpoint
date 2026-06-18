@@ -59,6 +59,7 @@ supabase/migrations/*
 !supabase/migrations/20260617135000_restrict_social_reads_to_authenticated.sql
 !supabase/migrations/20260617136000_add_venue_cnpj.sql
 !supabase/migrations/20260617137000_fix_approved_owner_profiles.sql
+!supabase/migrations/20260618113000_add_user_post_mentions.sql
 
 supabase/.temp/
 supabase/functions

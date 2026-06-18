@@ -72,6 +72,7 @@ export function PostComposer({
   const [taggedUsers, setTaggedUsers] = useState<UserMentionSummary[]>([]);
   const [photos, setPhotos] = useState<PreviewPhoto[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingOptions, setLoadingOptions] = useState(false);
   const selectedEvent = options.find((option) => option.id === eventId);
   const loadingRef = useRef(false);
   const requireAuthRef = useRef(onRequireAuth);
@@ -84,30 +85,37 @@ export function PostComposer({
     if (!open) {
       setOptions([]);
       setEventId("");
+      setLoadingOptions(false);
       return;
     }
     if (loadingRef.current) return;
     if (!userId) {
       setOptions([]);
       setEventId("");
+      setLoadingOptions(false);
       requireAuthRef.current();
       return;
     }
 
     let cancelled = false;
-    setOptions([]);
-    setEventId("");
+    setLoadingOptions(true);
     loadOptions({ data: { userId } })
       .then((nextOptions) => {
         if (cancelled) return;
         setOptions(nextOptions);
-        setEventId(nextOptions[0]?.id ?? "");
+        setEventId((currentEventId) => {
+          if (nextOptions.some((option) => option.id === currentEventId)) return currentEventId;
+          return nextOptions[0]?.id ?? "";
+        });
       })
       .catch(() => {
         if (!cancelled) {
           setOptions([]);
           setEventId("");
         }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingOptions(false);
       });
 
     return () => {
@@ -263,7 +271,7 @@ export function PostComposer({
             taggedUsers,
           },
         }),
-        20000,
+        45000,
         "Tempo esgotado ao publicar. Tente novamente.",
       );
       onCreated(post);
@@ -292,7 +300,15 @@ export function PostComposer({
         </div>
 
         <div className="space-y-4 p-5">
-          {options.length === 0 ? (
+          {options.length === 0 && loadingOptions ? (
+            <div className="rounded-3xl bg-muted p-5 text-center">
+              <LoaderCircle className="mx-auto h-8 w-8 animate-spin text-primary" />
+              <p className="mt-3 font-black">Carregando evento atual...</p>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Estamos verificando seus check-ins disponíveis para postagem.
+              </p>
+            </div>
+          ) : options.length === 0 ? (
             <div className="rounded-3xl bg-muted p-5 text-center">
               <CheckCircle2 className="mx-auto h-8 w-8 text-primary" />
               <p className="mt-3 font-black">Nenhum evento acontecendo agora para postar</p>
