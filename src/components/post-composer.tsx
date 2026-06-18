@@ -73,6 +73,12 @@ export function PostComposer({
   const [photos, setPhotos] = useState<PreviewPhoto[]>([]);
   const [loading, setLoading] = useState(false);
   const selectedEvent = options.find((option) => option.id === eventId);
+  const loadingRef = useRef(false);
+  const requireAuthRef = useRef(onRequireAuth);
+
+  useEffect(() => {
+    requireAuthRef.current = onRequireAuth;
+  }, [onRequireAuth]);
 
   useEffect(() => {
     if (!open) {
@@ -80,10 +86,11 @@ export function PostComposer({
       setEventId("");
       return;
     }
+    if (loadingRef.current) return;
     if (!userId) {
       setOptions([]);
       setEventId("");
-      onRequireAuth();
+      requireAuthRef.current();
       return;
     }
 
@@ -106,7 +113,7 @@ export function PostComposer({
     return () => {
       cancelled = true;
     };
-  }, [loadOptions, onRequireAuth, open, userId]);
+  }, [loadOptions, open, userId]);
 
   function resetForm() {
     photos.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
@@ -212,6 +219,7 @@ export function PostComposer({
       return;
     }
 
+    loadingRef.current = true;
     setLoading(true);
     try {
       if (photos.length > 0) onStatus("Preparando fotos...");
@@ -263,8 +271,10 @@ export function PostComposer({
       resetForm();
       onStatus("Postagem publicada.");
     } catch (cause) {
-      onStatus(cause instanceof Error ? cause.message : "Não foi possível publicar agora.");
+      console.error("Não foi possível publicar o post", cause);
+      onStatus(publicPostErrorMessage(cause));
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   }
@@ -459,6 +469,30 @@ function extensionFromMimeType(mimeType: string) {
 
 function mentionLabel(user: UserMentionSummary) {
   return user.username ? `@${user.username}` : (user.displayName ?? "");
+}
+
+function publicPostErrorMessage(cause: unknown) {
+  const fallback = "Não foi possível publicar agora. Tente novamente.";
+  if (!(cause instanceof Error)) return fallback;
+
+  const message = cause.message.trim();
+  const safePrefixes = [
+    "Adicione uma legenda",
+    "A imagem deve ter",
+    "Esse evento não está",
+    "Envie uma imagem",
+    "Escreva uma legenda",
+    "Faça check-in",
+    "Não foi possível abrir",
+    "Não foi possível ler",
+    "Não foi possível otimizar",
+    "Não foi possível preparar",
+    "Selecione um evento",
+    "Tempo esgotado",
+    "Use apenas imagens",
+  ];
+
+  return safePrefixes.some((prefix) => message.startsWith(prefix)) ? message : fallback;
 }
 
 async function optimizeImageForUpload(file: File) {
