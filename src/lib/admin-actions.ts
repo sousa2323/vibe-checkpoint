@@ -77,6 +77,7 @@ export type VenueApprovalSummary = {
   requesterName: string | null;
   requesterEmail: string | null;
   venueName: string;
+  cnpj: string | null;
   businessRole: string;
   category: string | null;
   city: string | null;
@@ -472,6 +473,7 @@ export const updateVenueApprovalStatus = createServerFn({ method: "POST" })
           UPDATE public.venues
           SET
             name = ${String(request.venue_name).trim()},
+            cnpj = COALESCE(${nullableString(request.cnpj)}, cnpj),
             business_role = ${String(request.business_role).trim()},
             neighborhood = ${nullableString(request.neighborhood) ?? "São Paulo"},
             city = ${nullableString(request.city) ?? "São Paulo"},
@@ -495,6 +497,7 @@ export const updateVenueApprovalStatus = createServerFn({ method: "POST" })
             owner_user_id,
             name,
             slug,
+            cnpj,
             business_role,
             neighborhood,
             city,
@@ -513,6 +516,7 @@ export const updateVenueApprovalStatus = createServerFn({ method: "POST" })
             ${targetUserId},
             ${String(request.venue_name).trim()},
             ${slug},
+            ${nullableString(request.cnpj)},
             ${String(request.business_role).trim()},
             ${nullableString(request.neighborhood) ?? "São Paulo"},
             ${nullableString(request.city) ?? "São Paulo"},
@@ -645,7 +649,7 @@ function auditLogQuery(sql: SqlClient) {
 
 function venueApprovalQuery(sql: SqlClient, requestId?: string) {
   return sql`
-    SELECT vcr.id, vcr.user_id, vcr.venue_name, vcr.business_role, vcr.category, vcr.city,
+    SELECT vcr.id, vcr.user_id, vcr.venue_name, vcr.cnpj, vcr.business_role, vcr.category, vcr.city,
       vcr.state, vcr.neighborhood, vcr.address, vcr.whatsapp, vcr.instagram, vcr.capacity,
       vcr.description, vcr.cover_image_url, vcr.status, vcr.review_note, vcr.created_at,
       vcr.updated_at, up.display_name AS requester_name, au.email AS requester_email
@@ -751,6 +755,7 @@ async function ensureAdminSchema(sql: SqlClient) {
 async function ensureVenueApprovalSchema(sql: SqlClient) {
   await sql`
     ALTER TABLE public.venue_claim_requests
+    ADD COLUMN IF NOT EXISTS cnpj text,
     ADD COLUMN IF NOT EXISTS category text,
     ADD COLUMN IF NOT EXISTS city text,
     ADD COLUMN IF NOT EXISTS state text,
@@ -770,8 +775,25 @@ async function ensureVenueApprovalSchema(sql: SqlClient) {
   `;
 
   await sql`
+    ALTER TABLE public.venues
+    ADD COLUMN IF NOT EXISTS cnpj text
+  `;
+
+  await sql`
     CREATE INDEX IF NOT EXISTS venue_claim_requests_status_created_idx
       ON public.venue_claim_requests (status, created_at DESC)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS venue_claim_requests_cnpj_idx
+      ON public.venue_claim_requests (cnpj)
+      WHERE cnpj IS NOT NULL
+  `;
+
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS venues_cnpj_unique_idx
+      ON public.venues (cnpj)
+      WHERE cnpj IS NOT NULL
   `;
 }
 
@@ -815,6 +837,7 @@ function toVenueApproval(row: Record<string, unknown>): VenueApprovalSummary {
     requesterName: nullableString(row.requester_name),
     requesterEmail: nullableString(row.requester_email),
     venueName: String(row.venue_name),
+    cnpj: nullableString(row.cnpj),
     businessRole: String(row.business_role),
     category: nullableString(row.category),
     city: nullableString(row.city),

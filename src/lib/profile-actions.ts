@@ -82,6 +82,7 @@ export type VenueApprovalStatus = "none" | "pending" | "approved" | "rejected";
 
 type SaveVenueClaimInput = SaveUserProfileInput & {
   venueName: string;
+  cnpj?: string;
   businessRole: string;
   phone?: string;
   neighborhood?: string;
@@ -103,6 +104,7 @@ type CreateOrUpdateVenueInput = SaveVenueClaimInput & {
 
 export type OwnerVenueOnboarding = {
   venueName: string;
+  cnpj?: string;
   businessRole?: string;
   neighborhood?: string;
   address?: string;
@@ -182,11 +184,27 @@ export const saveUserProfile = createServerFn({ method: "POST" })
         ${data.onboardingCompleted ?? false}
       )
       ON CONFLICT (user_id) DO UPDATE SET
-        account_type = EXCLUDED.account_type,
+        account_type = CASE
+          WHEN public.user_profiles.account_type = 'owner' AND EXCLUDED.account_type = 'explorer'
+            THEN public.user_profiles.account_type
+          WHEN EXISTS (
+            SELECT 1 FROM public.venues v WHERE v.owner_user_id = public.user_profiles.user_id
+          )
+            THEN 'owner'
+          ELSE EXCLUDED.account_type
+        END,
         display_name = COALESCE(EXCLUDED.display_name, public.user_profiles.display_name),
         username = COALESCE(EXCLUDED.username, public.user_profiles.username),
         avatar_url = COALESCE(EXCLUDED.avatar_url, public.user_profiles.avatar_url),
-        onboarding_completed = EXCLUDED.onboarding_completed,
+        onboarding_completed = CASE
+          WHEN public.user_profiles.account_type = 'owner' AND EXCLUDED.account_type = 'explorer'
+            THEN public.user_profiles.onboarding_completed
+          WHEN EXISTS (
+            SELECT 1 FROM public.venues v WHERE v.owner_user_id = public.user_profiles.user_id
+          )
+            THEN true
+          ELSE EXCLUDED.onboarding_completed
+        END,
         updated_at = now()
     `;
 
@@ -207,11 +225,11 @@ export const getUserProfile = createServerFn({ method: "GET" })
       const rows = await sql`
         SELECT
           up.user_id,
-          up.account_type,
+          CASE WHEN v.id IS NOT NULL THEN 'owner' ELSE up.account_type END AS account_type,
           up.display_name,
           up.username,
           up.avatar_url,
-          up.onboarding_completed,
+          CASE WHEN v.id IS NOT NULL THEN true ELSE up.onboarding_completed END AS onboarding_completed,
           ep.preferences AS private_explorer_preferences,
           up.explorer_preferences AS legacy_explorer_preferences,
           COALESCE(v.name, vcr.venue_name) AS venue_name,
@@ -225,7 +243,7 @@ export const getUserProfile = createServerFn({ method: "GET" })
         FROM public.user_profiles up
         LEFT JOIN public.explorer_preferences ep ON ep.user_id = up.user_id
         LEFT JOIN LATERAL (
-          SELECT name, neighborhood
+          SELECT id, name, neighborhood
           FROM public.venues
           WHERE owner_user_id = up.user_id
           ORDER BY created_at ASC
@@ -497,6 +515,7 @@ export const getOwnerVenueForOnboarding = createServerFn({ method: "GET" })
         v.latitude,
         v.longitude,
         v.cover_image_url,
+        v.cnpj,
         COALESCE(v.business_role, vcr.business_role) AS business_role
       FROM public.venues v
       LEFT JOIN LATERAL (
@@ -527,6 +546,7 @@ export const getOwnerVenueForOnboarding = createServerFn({ method: "GET" })
           latitude,
           longitude,
           cover_image_url,
+          cnpj,
           business_role,
           status,
           review_note
@@ -541,6 +561,7 @@ export const getOwnerVenueForOnboarding = createServerFn({ method: "GET" })
 
     return {
       venueName: String(row.name),
+      cnpj: row.cnpj ? String(row.cnpj) : undefined,
       businessRole: row.business_role ? String(row.business_role) : undefined,
       neighborhood: row.neighborhood ? String(row.neighborhood) : undefined,
       address: row.address ? String(row.address) : undefined,
@@ -585,6 +606,7 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
       ORDER BY created_at ASC
       LIMIT 1
     `;
+    const cnpj = normalizeCnpj(data.cnpj, { required: !existing[0] });
 
     if (!existing[0]) {
       await sql`
@@ -619,6 +641,7 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
           UPDATE public.venue_claim_requests
           SET
             venue_name = ${data.venueName.trim()},
+            cnpj = ${cnpj},
             business_role = ${data.businessRole.trim()},
             phone = ${data.whatsapp?.trim() || null},
             neighborhood = ${data.neighborhood?.trim() || "São Paulo"},
@@ -645,6 +668,7 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
           INSERT INTO public.venue_claim_requests (
           user_id,
           venue_name,
+          cnpj,
           business_role,
           phone,
           neighborhood,
@@ -665,6 +689,7 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
         VALUES (
           ${userId},
           ${data.venueName.trim()},
+          ${cnpj},
           ${data.businessRole.trim()},
           ${data.whatsapp?.trim() || null},
           ${data.neighborhood?.trim() || "São Paulo"},
@@ -713,6 +738,7 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
         UPDATE public.venues
         SET
           name = ${data.venueName.trim()},
+          cnpj = COALESCE(${cnpj}, cnpj),
           business_role = ${data.businessRole.trim()},
           neighborhood = ${data.neighborhood?.trim() || "São Paulo"},
           city = ${data.city?.trim() || "São Paulo"},
@@ -750,6 +776,7 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
         owner_user_id,
         name,
         slug,
+        cnpj,
         business_role,
         neighborhood,
         city,
@@ -768,6 +795,7 @@ export const createOrUpdateVenueForOwner = createServerFn({ method: "POST" })
         ${userId},
         ${data.venueName.trim()},
         ${slug},
+        ${cnpj},
         ${data.businessRole.trim()},
         ${data.neighborhood?.trim() || "São Paulo"},
         ${data.city?.trim() || "São Paulo"},
@@ -806,6 +834,7 @@ async function ensureVenueProfileSchema(_sql: Awaited<ReturnType<typeof getSql>>
 async function ensureVenueApprovalSchema(sql: NonNullable<Awaited<ReturnType<typeof getSql>>>) {
   await sql`
     ALTER TABLE public.venue_claim_requests
+    ADD COLUMN IF NOT EXISTS cnpj text,
     ADD COLUMN IF NOT EXISTS category text,
     ADD COLUMN IF NOT EXISTS city text,
     ADD COLUMN IF NOT EXISTS state text,
@@ -825,8 +854,25 @@ async function ensureVenueApprovalSchema(sql: NonNullable<Awaited<ReturnType<typ
   `;
 
   await sql`
+    ALTER TABLE public.venues
+    ADD COLUMN IF NOT EXISTS cnpj text
+  `;
+
+  await sql`
     CREATE INDEX IF NOT EXISTS venue_claim_requests_status_created_idx
       ON public.venue_claim_requests (status, created_at DESC)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS venue_claim_requests_cnpj_idx
+      ON public.venue_claim_requests (cnpj)
+      WHERE cnpj IS NOT NULL
+  `;
+
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS venues_cnpj_unique_idx
+      ON public.venues (cnpj)
+      WHERE cnpj IS NOT NULL
   `;
 }
 
@@ -994,6 +1040,33 @@ function normalizeUsername(value?: string) {
     .toLowerCase()
     .replace(/[^a-z0-9._]/g, "")
     .slice(0, 30);
+}
+
+function normalizeCnpj(value?: string, options: { required?: boolean } = {}) {
+  const digits = (value ?? "").replace(/\D/g, "");
+  if (!digits) {
+    if (options.required) throw new Error("Informe o CNPJ do estabelecimento.");
+    return null;
+  }
+  if (!isValidCnpj(digits)) throw new Error("Informe um CNPJ válido.");
+  return digits;
+}
+
+function isValidCnpj(cnpj: string) {
+  if (!/^\d{14}$/.test(cnpj)) return false;
+  if (/^(\d)\1{13}$/.test(cnpj)) return false;
+
+  const calculateDigit = (length: number) => {
+    const weights =
+      length === 12
+        ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+        : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const sum = weights.reduce((total, weight, index) => total + Number(cnpj[index]) * weight, 0);
+    const remainder = sum % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+
+  return calculateDigit(12) === Number(cnpj[12]) && calculateDigit(13) === Number(cnpj[13]);
 }
 
 function validateUsername(username: string) {

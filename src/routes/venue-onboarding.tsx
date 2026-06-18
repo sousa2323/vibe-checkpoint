@@ -83,6 +83,7 @@ const stateOptions = [
 
 type VenueFormValues = {
   venueName: string;
+  cnpj: string;
   businessRole: string;
   whatsapp: string;
   category: string;
@@ -97,6 +98,7 @@ type VenueFormValues = {
 
 const emptyFormValues: VenueFormValues = {
   venueName: "",
+  cnpj: "",
   businessRole: "",
   whatsapp: "",
   category: "",
@@ -122,6 +124,21 @@ function formatPhone(value: string) {
   if (digits.length <= 2) return area ? `(${area}` : "";
   if (!second) return `(${area}) ${first}`;
   return `(${area}) ${first}-${second}`;
+}
+
+function formatCnpj(value: string) {
+  const digits = onlyDigits(value, 14);
+  const first = digits.slice(0, 2);
+  const second = digits.slice(2, 5);
+  const third = digits.slice(5, 8);
+  const branch = digits.slice(8, 12);
+  const check = digits.slice(12, 14);
+
+  if (digits.length <= 2) return first;
+  if (digits.length <= 5) return `${first}.${second}`;
+  if (digits.length <= 8) return `${first}.${second}.${third}`;
+  if (digits.length <= 12) return `${first}.${second}.${third}/${branch}`;
+  return `${first}.${second}.${third}/${branch}-${check}`;
 }
 
 function formatInstagram(value: string) {
@@ -184,6 +201,7 @@ function VenueOnboarding() {
 
         setFormValues({
           venueName: venue.venueName,
+          cnpj: venue.cnpj ? formatCnpj(venue.cnpj) : "",
           businessRole: venue.businessRole ?? "",
           whatsapp: venue.whatsapp ?? "",
           category: venue.category ?? "",
@@ -304,6 +322,7 @@ function VenueOnboarding() {
 
     const formData = new FormData(event.currentTarget);
     const venueName = formValues.venueName.trim();
+    const cnpj = onlyDigits(formValues.cnpj, 14);
     const businessRole = formValues.businessRole.trim();
     const whatsapp = formValues.whatsapp.trim();
     const category = formValues.category.trim();
@@ -318,9 +337,24 @@ function VenueOnboarding() {
     const image = imageField instanceof File && imageField.size > 0 ? imageField : null;
     const imageError = image ? validateImageFile(image) : null;
 
-    if (!venueName || !businessRole || !category || !state || !city || !neighborhood || !address) {
+    if (
+      !venueName ||
+      !cnpj ||
+      !businessRole ||
+      !category ||
+      !state ||
+      !city ||
+      !neighborhood ||
+      !address
+    ) {
       setStatus("idle");
-      setError("Preencha nome, função, categoria, estado, cidade, bairro e endereço.");
+      setError("Preencha nome, CNPJ, função, categoria, estado, cidade, bairro e endereço.");
+      return;
+    }
+
+    if (cnpj.length !== 14) {
+      setStatus("idle");
+      setError("Informe um CNPJ válido com 14 dígitos.");
       return;
     }
 
@@ -365,6 +399,7 @@ function VenueOnboarding() {
             accountType: "owner",
             displayName: getAuthUserName(currentUser),
             venueName,
+            cnpj,
             businessRole,
             category,
             state,
@@ -392,6 +427,7 @@ function VenueOnboarding() {
         setReviewNote(null);
         return;
       }
+      setApprovalStatus("approved");
       setTimeout(() => navigate({ to: "/venue-dashboard" }), 700);
     } catch (cause) {
       setStatus("idle");
@@ -448,6 +484,11 @@ function VenueOnboarding() {
               ) : null}
             </div>
           ) : null}
+          {approvalStatus === "approved" ? (
+            <div className="mt-4 rounded-3xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm font-semibold text-foreground">
+              Estabelecimento aprovado. As alterações salvas aqui atualizam seu painel.
+            </div>
+          ) : null}
         </div>
 
         <form onSubmit={submit} className="mt-7 space-y-3 rounded-3xl border border-border p-4">
@@ -487,6 +528,18 @@ function VenueOnboarding() {
             placeholder="Nome real do local"
             value={formValues.venueName}
             onValueChange={(value) => updateField("venueName", value)}
+            required
+          />
+          <Field
+            icon={<FileText className="h-4 w-4" />}
+            label="CNPJ"
+            name="cnpj"
+            placeholder="00.000.000/0000-00"
+            inputMode="numeric"
+            maxLength={18}
+            onFormat={formatCnpj}
+            value={formValues.cnpj}
+            onValueChange={(value) => updateField("cnpj", value)}
             required
           />
           <SelectField
@@ -653,7 +706,9 @@ function VenueOnboarding() {
               ? savingMessage || "Salvando..."
               : approvalStatus === "pending"
                 ? "Atualizar solicitação"
-                : "Enviar para análise"}
+                : approvalStatus === "approved"
+                  ? "Salvar alterações"
+                  : "Enviar para análise"}
           </PillButton>
         </form>
       </div>

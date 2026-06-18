@@ -865,6 +865,7 @@ function VenueApprovalCard({
 
         <div className="grid gap-2 text-sm font-semibold text-muted-foreground sm:grid-cols-2">
           <InfoLine label="Categoria" value={request.category} />
+          <InfoLine label="CNPJ" value={formatCnpjDisplay(request.cnpj)} />
           <InfoLine label="Local" value={location || null} />
           <InfoLine label="Endereço" value={request.address} />
           <InfoLine label="WhatsApp" value={request.whatsapp} />
@@ -924,6 +925,12 @@ function InfoLine({ label, value }: { label: string; value: string | null }) {
       <span className="mt-0.5 block truncate text-foreground">{value || "Não informado"}</span>
     </p>
   );
+}
+
+function formatCnpjDisplay(value: string | null) {
+  const digits = (value ?? "").replace(/\D/g, "");
+  if (digits.length !== 14) return value;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
 }
 
 function AuditTab({ logs, onRefresh }: { logs: AdminAuditLogSummary[]; onRefresh: () => void }) {

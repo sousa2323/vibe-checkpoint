@@ -57,6 +57,8 @@ supabase/migrations/*
 !supabase/migrations/20260617133000_pending_venue_owner_approval.sql
 !supabase/migrations/20260617134000_secure_group_plan_votes.sql
 !supabase/migrations/20260617135000_restrict_social_reads_to_authenticated.sql
+!supabase/migrations/20260617136000_add_venue_cnpj.sql
+!supabase/migrations/20260617137000_fix_approved_owner_profiles.sql
 
 supabase/.temp/
 supabase/functions

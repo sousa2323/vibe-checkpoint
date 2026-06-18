@@ -116,8 +116,9 @@ function PostAuth() {
 
       const profile = await getProfile({ data: { userId: currentUser.id } });
       const requestedAccountType = getRequestedAccountType(currentUser);
+      const hasApprovedOwnerProfile = profile?.accountType === "owner";
       const accountType =
-        requestedAccountType === "owner" && profile?.accountType !== "owner"
+        requestedAccountType === "owner" && !hasApprovedOwnerProfile
           ? "owner"
           : (profile?.accountType ?? requestedAccountType);
 
@@ -138,7 +139,7 @@ function PostAuth() {
         if (!cancelled) {
           navigate({
             to:
-              profile?.accountType === "owner" && profile.onboardingCompleted
+              hasApprovedOwnerProfile && profile.onboardingCompleted
                 ? "/venue-dashboard"
                 : "/venue-onboarding",
             replace: true,
