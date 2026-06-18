@@ -997,6 +997,29 @@ async function ensureNotificationsSchema(sql: SqlClient) {
     ADD COLUMN IF NOT EXISTS archived_at timestamptz
   `;
 
+  // Mantém a constraint de tipo alinhada com os tipos suportados pelo app
+  // (NotificationSummary["type"]). Sem isso, inserir 'post_mention' viola uma
+  // constraint antiga e aborta a transação de criação do post.
+  await sql`
+    ALTER TABLE public.notifications
+    DROP CONSTRAINT IF EXISTS notifications_type_check
+  `;
+
+  await sql`
+    ALTER TABLE public.notifications
+    ADD CONSTRAINT notifications_type_check CHECK (
+      type IN (
+        'venue_update',
+        'new_event',
+        'event_reminder',
+        'post_mention',
+        'post_comment',
+        'group_activity',
+        'reward'
+      )
+    )
+  `;
+
   await sql`
     CREATE TABLE IF NOT EXISTS public.push_tokens (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
