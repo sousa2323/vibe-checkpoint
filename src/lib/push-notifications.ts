@@ -3,7 +3,10 @@ import { LocalNotifications } from "@capacitor/local-notifications";
 import { PushNotifications } from "@capacitor/push-notifications";
 import type { PushPlatform } from "@/lib/data";
 
-const ANDROID_NOTIFICATION_CHANNEL_ID = "default";
+const ANDROID_NOTIFICATION_CHANNEL_ID = "chegaai_alerts_v1";
+// Canal antigo criado em importância baixa (travada pelo Android). Apagamos para
+// migrar todo mundo para o canal HIGH novo e não deixar duas entradas em Configurações.
+const ANDROID_LEGACY_NOTIFICATION_CHANNEL_ID = "default";
 const ANDROID_TOKEN_ROTATION_STORAGE_KEY = "chegaai:android-push-token-rotation:v1";
 const LOG_PREFIX = "[push]";
 
@@ -170,6 +173,15 @@ async function ensureAndroidNotificationPresentation() {
   }
 
   if (localPermission.display !== "granted") return false;
+
+  // Remove o canal antigo de baixa importância. Como a importância de um canal é
+  // travada na primeira criação, não dá para "promover" o "default"; criamos um novo.
+  try {
+    await PushNotifications.deleteChannel({ id: ANDROID_LEGACY_NOTIFICATION_CHANNEL_ID });
+    await LocalNotifications.deleteChannel({ id: ANDROID_LEGACY_NOTIFICATION_CHANNEL_ID });
+  } catch (error) {
+    logWarn("Failed to delete legacy notification channel.", error);
+  }
 
   const channel = {
     id: ANDROID_NOTIFICATION_CHANNEL_ID,
