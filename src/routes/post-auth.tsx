@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, TriangleAlert, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { authClient, getAuthUserName } from "@/auth";
 import { type AccountType, getUserProfile, saveUserProfile } from "@/lib/profile-actions";
@@ -68,6 +68,22 @@ function getRequestedAccountType(user: unknown): AccountType {
   return requestedTypes.includes("owner") ? "owner" : "explorer";
 }
 
+type PostAuthErrorKind = "connection" | "session";
+
+function isConnectionError(cause: unknown): boolean {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  if (cause instanceof Error) {
+    const message = cause.message.toLowerCase();
+    return (
+      message.includes("failed to fetch") ||
+      message.includes("load failed") ||
+      message.includes("network") ||
+      message.includes("fetch")
+    );
+  }
+  return false;
+}
+
 function clearStoredAuthIntent() {
   try {
     localStorage.removeItem("chegaai:signup-account-type");
@@ -84,7 +100,7 @@ function PostAuth() {
   const getProfile = useServerFn(getUserProfile);
   const saveProfile = useServerFn(saveUserProfile);
   const [message, setMessage] = useState("Preparando sua experiência...");
-  const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<PostAuthErrorKind | null>(null);
   const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
@@ -104,7 +120,7 @@ function PostAuth() {
     let cancelled = false;
 
     async function routeByProfile() {
-      setError(null);
+      setErrorKind(null);
       setMessage("Encontrando seu perfil no ChegaAí...");
       const authUserName = getAuthUserName(currentUser);
       const authUsername = getMetadataUsername(currentUser);
@@ -167,16 +183,58 @@ function PostAuth() {
 
     routeByProfile().catch((cause) => {
       if (cancelled) return;
-      setMessage("Não foi possível confirmar sua sessão.");
-      setError(
-        cause instanceof Error ? cause.message : "Entre novamente para continuar com segurança.",
-      );
+      setErrorKind(isConnectionError(cause) ? "connection" : "session");
     });
 
     return () => {
       cancelled = true;
     };
   }, [getProfile, navigate, retryKey, saveProfile, user]);
+
+  if (errorKind) {
+    const isConnection = errorKind === "connection";
+
+    return (
+      <main className="app-shell flex flex-col items-center justify-center bg-background px-8 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-ink text-white">
+          {isConnection ? (
+            <WifiOff className="h-7 w-7" />
+          ) : (
+            <TriangleAlert className="h-7 w-7" />
+          )}
+        </div>
+        <h1 className="mt-6 text-2xl font-black tracking-tight">
+          {isConnection ? "Sem conexão" : "Algo deu errado"}
+        </h1>
+        <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
+          {isConnection
+            ? "Verifique sua internet e tente de novo para continuar."
+            : "Não foi possível confirmar sua sessão. Tente novamente."}
+        </p>
+        <div className="mt-5 flex w-full max-w-xs flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setErrorKind(null);
+              setRetryKey((current) => current + 1);
+            }}
+            className="rounded-full bg-ink px-4 py-3 text-sm font-bold text-white"
+          >
+            Tentar novamente
+          </button>
+          {!isConnection ? (
+            <button
+              type="button"
+              onClick={() => navigate({ to: "/auth", replace: true })}
+              className="rounded-full bg-muted px-4 py-3 text-sm font-bold text-foreground"
+            >
+              Entrar novamente
+            </button>
+          ) : null}
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="app-shell flex flex-col items-center justify-center bg-background px-8 text-center">
@@ -185,25 +243,6 @@ function PostAuth() {
       </div>
       <h1 className="mt-6 text-2xl font-black tracking-tight">Quase lá</h1>
       <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">{message}</p>
-      {error ? (
-        <div className="mt-5 flex w-full max-w-xs flex-col gap-2">
-          <p className="text-sm font-semibold text-primary">{error}</p>
-          <button
-            type="button"
-            onClick={() => setRetryKey((current) => current + 1)}
-            className="rounded-full bg-ink px-4 py-3 text-sm font-bold text-white"
-          >
-            Tentar novamente
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate({ to: "/auth", replace: true })}
-            className="rounded-full bg-muted px-4 py-3 text-sm font-bold text-foreground"
-          >
-            Entrar novamente
-          </button>
-        </div>
-      ) : null}
     </main>
   );
 }

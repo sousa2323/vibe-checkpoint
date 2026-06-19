@@ -7,7 +7,7 @@ const ANDROID_NOTIFICATION_CHANNEL_ID = "chegaai_alerts_v1";
 // Canal antigo criado em importância baixa (travada pelo Android). Apagamos para
 // migrar todo mundo para o canal HIGH novo e não deixar duas entradas em Configurações.
 const ANDROID_LEGACY_NOTIFICATION_CHANNEL_ID = "default";
-const ANDROID_TOKEN_ROTATION_STORAGE_KEY = "chegaai:android-push-token-rotation:v1";
+const ANDROID_TOKEN_ROTATION_STORAGE_KEY = "chegaai:android-push-token-rotation:v2";
 const LOG_PREFIX = "[push]";
 
 function logInfo(message: string, data?: unknown) {
@@ -18,14 +18,21 @@ function logWarn(message: string, data?: unknown) {
   console.warn(`${LOG_PREFIX} ${message}${formatLogData(data)}`);
 }
 
-function formatLogData(data: unknown) {
+function formatLogData(data: unknown): string {
   if (data === undefined) return "";
-  if (data instanceof Error) return ` ${data.message}`;
+  if (data instanceof Error) {
+    const cause = data.cause === undefined ? "" : ` ${safeStringify(data.cause)}`;
+    return ` ${data.message}${cause}`;
+  }
 
+  return ` ${safeStringify(data)}`;
+}
+
+function safeStringify(data: unknown) {
   try {
-    return ` ${JSON.stringify(data)}`;
+    return JSON.stringify(data);
   } catch (_error) {
-    return " [unserializable]";
+    return "[unserializable]";
   }
 }
 

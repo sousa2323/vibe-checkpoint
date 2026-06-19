@@ -7,14 +7,14 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useEffect } from "react";
 
 import { authClient } from "@/auth";
-import { registerPushToken } from "@/lib/data";
+import type { PushPlatform } from "@/lib/data";
 import { requestInitialNativePermissions } from "@/lib/device-permissions";
 import { registerNativeBackButton } from "@/lib/native-back-button";
 import { registerNativePushNotifications } from "@/lib/push-notifications";
+import { getSupabaseBrowserClient } from "@/lib/supabase-client";
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import appCss from "../styles.css?url";
 
@@ -158,7 +158,6 @@ function RootComponent() {
   const router = useRouter();
   const { data } = authClient.useSession();
   const userId = data?.user?.id;
-  const savePushToken = useServerFn(registerPushToken);
 
   useEffect(() => {
     void registerNativeBackButton(router);
@@ -188,18 +187,102 @@ function RootComponent() {
       // sequência, para não abrir caixas nativas concorrentes.
       await registerNativePushNotifications({
         userId,
-        saveToken: ({ token, platform }) => savePushToken({ data: { userId, token, platform } }),
+        saveToken: ({ token, platform }) => saveNativePushToken({ userId, token, platform }),
         openRoute: (route) => {
           void router.navigate({ to: route as never });
         },
       });
       await requestInitialNativePermissions();
     })();
-  }, [router, savePushToken, userId]);
+  }, [router, userId]);
 
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
     </QueryClientProvider>
   );
+}
+
+async function saveNativePushToken({
+  userId,
+  token,
+  platform,
+}: {
+  userId: string;
+  token: string;
+  platform: PushPlatform;
+}) {
+  const supabase = getSupabaseBrowserClient();
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+
+  console.info(
+    `[push] Saving native push token via Supabase. ${JSON.stringify({
+      platform,
+      tokenLength: token.length,
+      routeUserIdMatchesSession: sessionData.session?.user.id === userId,
+      hasAccessToken: Boolean(sessionData.session?.access_token),
+    })}`,
+  );
+
+  const { data: savedRows, error: upsertError } = await supabase
+    .from("push_tokens")
+    .upsert(
+      {
+        user_id: userId,
+        token,
+        platform,
+        last_seen_at: new Date().toISOString(),
+      } as never,
+      { onConflict: "token" },
+    )
+    .select("user_id,platform,last_seen_at");
+
+  if (upsertError) throw withSupabaseErrorContext("upsert push token", upsertError);
+
+  const { data: persistedRows, error: selectError } = await supabase
+    .from("push_tokens")
+    .select("user_id,platform,last_seen_at")
+    .eq("user_id", userId)
+    .eq("platform", platform)
+    .eq("token", token)
+    .limit(1);
+
+  if (selectError) throw withSupabaseErrorContext("select saved push token", selectError);
+
+  if (!persistedRows?.length) throw new Error("Push token was not persisted after upsert.");
+
+  const { count: deletedTokenCount, error: deleteError } = await supabase
+    .from("push_tokens")
+    .delete({ count: "exact" })
+    .eq("user_id", userId)
+    .eq("platform", platform)
+    .neq("token", token);
+
+  if (deleteError) throw withSupabaseErrorContext("delete stale push tokens", deleteError);
+
+  console.info(
+    `[push] Native push token persistence verified. ${JSON.stringify({
+      upsertedRows: savedRows?.length ?? 0,
+      persistedRows: persistedRows.length,
+      deletedStaleTokens: deletedTokenCount ?? 0,
+    })}`,
+  );
+}
+
+function withSupabaseErrorContext(operation: string, error: unknown) {
+  const details = error as {
+    message?: unknown;
+    code?: unknown;
+    details?: unknown;
+    hint?: unknown;
+  };
+  const message = typeof details.message === "string" ? details.message : "Unknown Supabase error";
+  const contextualError = new Error(`${operation}: ${message}`);
+  contextualError.cause = {
+    code: details.code,
+    details: details.details,
+    hint: details.hint,
+  };
+  return contextualError;
 }

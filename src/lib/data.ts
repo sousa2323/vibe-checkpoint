@@ -4206,10 +4206,10 @@ export const archiveReadNotifications = createServerFn({ method: "POST" })
 export const registerPushToken = createServerFn({ method: "POST" })
   .inputValidator((data: { userId?: string; token?: string; platform?: PushPlatform }) => data)
   .handler(async ({ data }): Promise<void> => {
-    const userId = await getOptionalAuthenticatedUserId(data.userId);
+    const userId = await requireAuthenticatedUserId(data.userId);
     const token = data.token?.trim();
     const platform = data.platform;
-    if (!userId || !token || !platform) return;
+    if (!token || !platform) return;
 
     const sql = await getSql();
     if (!sql) return;
