@@ -12,6 +12,7 @@ import { useEffect } from "react";
 
 import { authClient } from "@/auth";
 import { registerPushToken } from "@/lib/data";
+import { requestInitialNativePermissions } from "@/lib/device-permissions";
 import { registerNativeBackButton } from "@/lib/native-back-button";
 import { registerNativePushNotifications } from "@/lib/push-notifications";
 import { THEME_STORAGE_KEY } from "../lib/theme";
@@ -182,13 +183,18 @@ function RootComponent() {
       userIdLength: userId.length,
     });
 
-    void registerNativePushNotifications({
-      userId,
-      saveToken: ({ token, platform }) => savePushToken({ data: { userId, token, platform } }),
-      openRoute: (route) => {
-        void router.navigate({ to: route as never });
-      },
-    });
+    void (async () => {
+      // Notificação primeiro (igual hoje), depois localização → câmera → galeria, em
+      // sequência, para não abrir caixas nativas concorrentes.
+      await registerNativePushNotifications({
+        userId,
+        saveToken: ({ token, platform }) => savePushToken({ data: { userId, token, platform } }),
+        openRoute: (route) => {
+          void router.navigate({ to: route as never });
+        },
+      });
+      await requestInitialNativePermissions();
+    })();
   }, [router, savePushToken, userId]);
 
   return (

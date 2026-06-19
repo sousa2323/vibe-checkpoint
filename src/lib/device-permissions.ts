@@ -30,6 +30,45 @@ export async function requestDevicePermission(
   return requestNotificationsPermissionState();
 }
 
+// Permissões pedidas automaticamente no primeiro uso nativo (após o login), uma após a
+// outra. A de notificação já é pedida pelo fluxo de push; aqui cobrimos o restante.
+const INITIAL_NATIVE_PERMISSION_ORDER: DevicePermissionKind[] = ["location", "camera", "photos"];
+const INITIAL_NATIVE_PERMISSIONS_STORAGE_KEY = "chegaai:initial-native-permissions:v1";
+
+export async function requestInitialNativePermissions(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+
+  try {
+    if (localStorage.getItem(INITIAL_NATIVE_PERMISSIONS_STORAGE_KEY) === "done") return;
+  } catch {
+    // localStorage indisponível: segue e tenta pedir mesmo assim.
+  }
+
+  let statuses: DevicePermissionStatuses;
+  try {
+    statuses = await getDevicePermissionStatuses();
+  } catch {
+    return;
+  }
+
+  // Sequencial: cada caixa nativa só abre depois que a anterior é respondida. Só pede o
+  // que ainda está em "prompt" (não reabre o que o usuário já concedeu ou negou).
+  for (const kind of INITIAL_NATIVE_PERMISSION_ORDER) {
+    if (statuses[kind] !== "prompt") continue;
+    try {
+      await requestDevicePermission(kind);
+    } catch {
+      // Falha numa permissão não impede pedir as próximas.
+    }
+  }
+
+  try {
+    localStorage.setItem(INITIAL_NATIVE_PERMISSIONS_STORAGE_KEY, "done");
+  } catch {
+    // Sem persistência: na pior das hipóteses tentamos de novo num próximo login.
+  }
+}
+
 async function getLocationPermissionState(): Promise<DevicePermissionState> {
   if (!Capacitor.isNativePlatform() && !navigator.geolocation) return "unavailable";
 
